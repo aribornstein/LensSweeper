@@ -1,0 +1,77 @@
+- !<AssetImportMetadata/449815e4-48bc-4d40-b41d-d563c15033e4>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 9394b7b6-18d8-421e-9c23-7cd8534df704
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 9394b7b6-18d8-421e-9c23-7cd8534df704
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> 7def5720-0f09-4d01-8065-d689e295abdf
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/7def5720-0f09-4d01-8065-d689e295abdf>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  VersionPrerelease: ""
+  UpdateOrder: 0
+  ComponentUid: 7f4801b5-6cba-4970-b8ac-8cf7386fb13a
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    boundaryMaterial: false
+    flagMaterial: false
+    hologramMaterial: false
+    mineMaterial: false
+    playerHighlightMaterial: false
+    revealedMaterial: false
+    scanMaterial: false
+    targetHighlightMaterial: false
+    tileMesh: false
+    unrevealedMaterial: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - tileMesh: !<reference.RenderMesh> 00000000-0000-0000-0000-000000000000
+      unrevealedMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      revealedMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      mineMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      flagMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      playerHighlightMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      targetHighlightMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      boundaryMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      hologramMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      scanMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @ui {"widget":"label", "label":"<span style=\"color: #22D3EE;\">Specs Sweeper board presentation</span>"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"References"}'
+    - '// @input Asset.RenderMesh tileMesh {"hint":"Shared unit box mesh used by every tile and marker"}'
+    - '// @input Asset.Material unrevealedMaterial {"hint":"Nearly transparent unrevealed tile material"}'
+    - '// @input Asset.Material revealedMaterial {"hint":"Cyan safe reveal material"}'
+    - '// @input Asset.Material mineMaterial {"hint":"Orange/red mine material"}'
+    - '// @input Asset.Material flagMaterial {"hint":"Orange holographic flag material"}'
+    - '// @input Asset.Material playerHighlightMaterial {"hint":"Cyan current-player cell highlight"}'
+    - '// @input Asset.Material targetHighlightMaterial {"hint":"Yellow target cell highlight"}'
+    - '// @input Asset.Material boundaryMaterial {"hint":"Cyan board boundary material"}'
+    - '// @input Asset.Material hologramMaterial {"hint":"Asset Library hologram material used by thin frame rails and beacons"}'
+    - '// @input Asset.Material scanMaterial {"hint":"Asset Library scan material used by the targeted cell"}'
+    - '// @ui {"widget":"group_end"}'

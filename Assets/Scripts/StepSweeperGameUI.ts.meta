@@ -1,0 +1,50 @@
+- !<AssetImportMetadata/d8e8c48f-156f-400d-ae6f-eb702f402518>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 5a1b7bba-3470-470c-8c01-2ae422dca711
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 5a1b7bba-3470-470c-8c01-2ae422dca711
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> fb8008b2-05df-423f-babc-33e66b14f676
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/fb8008b2-05df-423f-babc-33e66b14f676>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  VersionPrerelease: ""
+  UpdateOrder: 0
+  ComponentUid: 8fe48bb7-5b29-4afe-ad22-08a11e88d186
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    debugControls: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - debugControls: true
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @ui {"widget":"label", "label":"<span style=\"color: #22D3EE;\">Specs Sweeper UI</span>"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"Settings"}'
+    - '// @input bool debugControls = true {"hint":"Show development controls in Preview"}'
+    - '// @ui {"widget":"group_end"}'

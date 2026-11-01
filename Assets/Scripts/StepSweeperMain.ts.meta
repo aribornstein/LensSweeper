@@ -1,0 +1,95 @@
+- !<AssetImportMetadata/7b25cb01-c74a-4c9b-ba58-e29c4254676c>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> aaf2bfef-ccc2-4dfb-a55a-274148b862c9
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> aaf2bfef-ccc2-4dfb-a55a-274148b862c9
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> 08440665-593c-4e23-ad6f-b020596696ad
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/08440665-593c-4e23-ad6f-b020596696ad>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  VersionPrerelease: ""
+  UpdateOrder: 0
+  ComponentUid: 319b6d94-ce59-403c-b93d-621cca49fb42
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    boardForwardDistanceCm: false
+    boardRoot: false
+    cameraObject: false
+    cellSizeCm: false
+    cellView: false
+    columns: false
+    debugLogging: false
+    emulatorFloorY: false
+    gameUI: false
+    mineCount: false
+    revealDelaySeconds: false
+    rows: false
+    startAccentTrack: false
+    useSimulatedPlayer: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - boardRoot: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      cameraObject: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      cellView: !<MappingBased.AssignableType_1> 00000000-0000-0000-0000-000000000000
+      gameUI: !<MappingBased.AssignableType_2> 00000000-0000-0000-0000-000000000000
+      startAccentTrack: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      rows: !<float> 6.000000
+      columns: !<float> 6.000000
+      cellSizeCm: !<float> 50.000000
+      mineCount: !<float> 6.000000
+      revealDelaySeconds: 0.045000
+      useSimulatedPlayer: true
+      boardForwardDistanceCm: !<float> 250.000000
+      emulatorFloorY: !<float> -150.000000
+      debugLogging: true
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @ui {"widget":"label", "label":"<span style=\"color: #22D3EE;\">Specs Sweeper – room-scale Minesweeper</span>"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"References"}'
+    - '// @input SceneObject boardRoot {"hint":"Authored world-space board anchor"}'
+    - '// @input SceneObject cameraObject {"hint":"Main tracked camera object"}'
+    - '// @input AssignableType_1 cellView {"hint":"Board presentation component"}'
+    - '// @input AssignableType_2 gameUI {"hint":"UIKit intro, HUD, debug, and end-state view"}'
+    - '// @input Asset.AudioTrackAsset startAccentTrack {"hint":"Optional Asset Library accent played when a round starts"}'
+    - '// @ui {"widget":"group_end"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"Board Settings"}'
+    - '// @input float rows = 6 {"hint":"Board row count", "widget":"slider", "min":4, "max":10, "step":1}'
+    - '// @input float columns = 6 {"hint":"Board column count", "widget":"slider", "min":4, "max":10, "step":1}'
+    - '// @input float cellSizeCm = 50 {"hint":"Cell width and depth in centimeters", "widget":"slider", "min":35, "max":70, "step":1}'
+    - '// @input float mineCount = 6 {"hint":"Mine count", "widget":"slider", "min":3, "max":18, "step":1}'
+    - '// @input float revealDelaySeconds = 0.045 {"hint":"Delay between flood-reveal tiles", "widget":"slider", "min":0.02, "max":0.15, "step":0.01}'
+    - '// @ui {"widget":"group_end"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"group_start", "label":"Preview"}'
+    - '// @input bool useSimulatedPlayer = true {"hint":"Enable button-driven movement in Lens Studio Preview only"}'
+    - '// @input float boardForwardDistanceCm = 340 {"hint":"Board center distance in front of the tracked camera, in centimeters", "widget":"slider", "min":200, "max":450, "step":10}'
+    - '// @input float emulatorFloorY = -150 {"hint":"Estimated floor offset below the tracked camera, in centimeters", "widget":"slider", "min":-200, "max":-80, "step":5}'
+    - '// @input bool debugLogging = true {"hint":"Print coordinate, mine, and state diagnostics"}'
+    - '// @ui {"widget":"group_end"}'
