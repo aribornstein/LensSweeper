@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "bash .github/hooks/scripts/lens-studio-liveness.sh",
+        "powershell": "powershell -NoProfile -ExecutionPolicy Bypass -File .github/hooks/scripts/lens-studio-liveness.ps1",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

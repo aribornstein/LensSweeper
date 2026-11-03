@@ -136,3 +136,21 @@ The project registers three LEAF scenarios in [StepSweeperLeafIndex.ts](Assets/S
 Run UI scenarios from a fresh Preview session. The core-flow scenario assumes **Standard** difficulty and simulated movement; select Standard before running it. Progression and reachability scenarios expect the intro screen.
 
 These scenarios do not replace testing floor detection, physical movement, hand targeting, and spatial readability on SPECS.
+
+## AI development with CLAD
+
+This project includes [CLAD](https://developers.specs.com/docs/clad), the Lens Studio agent toolkit, ported to GitHub Copilot. The port includes skills, custom agents, and a Lens Studio liveness hook:
+
+- [.github/skills/](.github/skills/): the 56 ls-clad skills. Start Lens Studio tasks with `/lens-studio-router`.
+- [.github/agents/](.github/agents/): ls-clad subagents such as `specs-experience-builder` and `live-lens-tester`.
+- [.github/hooks/lens-studio-liveness.json](.github/hooks/lens-studio-liveness.json): blocks Lens Studio tool calls when the editor is closed.
+
+Open this project in Lens Studio **before** starting a Copilot session. Lens Studio provides the `lens-studio` MCP server and writes its local connection files (`.vscode/mcp.json`, `.mcp.json`).
+
+To update the toolkit from [ls-extensions](https://github.com/lens-studio-devs/ls-extensions), run:
+
+```sh
+python3 .github/clad/sync-clad.py
+```
+
+The script records the upstream commit in [.github/clad/manifest.json](.github/clad/manifest.json). Do not edit generated skills or agents directly. Claude Code, Codex, and Cursor can install the `ls-clad` plugin directly instead.
