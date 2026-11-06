@@ -5,6 +5,7 @@ import {FlexAlign, FlexDirection, FlexJustify} from "SpectaclesUIKit.lspkg/Scrip
 import {Button} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/Button"
 import {ElementContent} from "SpectaclesUIKit.lspkg/Scripts/Components/Content/ElementContent"
 import {RoundedRectangle, RoundedRectBlendMode} from "SpectaclesUIKit.lspkg/Scripts/Visuals/RoundedRectangle/RoundedRectangle"
+import {RoundedRectangleVisual, RoundedRectangleVisualState, RoundedRectangleVisualParameters} from "SpectaclesUIKit.lspkg/Scripts/Visuals/RoundedRectangle/RoundedRectangleVisual"
 
 const ICON_PLAY = requireAsset("../Icons/play_arrow.png") as Texture
 const ICON_RESTART = requireAsset("../Icons/restart_alt.png") as Texture
@@ -32,12 +33,19 @@ export class StepSweeperGameUI extends BaseScriptComponent {
   @ui.separator
   @ui.group_start("Settings")
   @input @hint("Show development controls in Preview") debugControls: boolean = true
+  @input @hint("Distance in centimeters at which the completed-round card appears") resultDistanceCm: number = 170
+  @input @hint("Lift the result card above the view center, in centimeters") resultLiftCm: number = 22
+  @input @hint("Result panel tint") @widget(new ColorWidget()) resultPanelColor: vec4 = new vec4(0.075, 0.2, 0.27, 0.78)
+  @input @hint("Replay button fill") @widget(new ColorWidget()) replayColor: vec4 = new vec4(0.16, 0.44, 0.55, 0.9)
   @ui.group_end
 
   private introPanel!: SceneObject
   private hudPanel!: SceneObject
   private endPanel!: SceneObject
   private debugPanel!: SceneObject
+  private objectivePanel!: SceneObject
+  private controlsPanel!: SceneObject
+  private counterPanel!: SceneObject
   private timerText!: Text
   private flagsText!: Text
   private safeText!: Text
@@ -45,13 +53,16 @@ export class StepSweeperGameUI extends BaseScriptComponent {
   private positionText!: Text
   private targetText!: Text
   private endTitleText!: Text
-  private endStatsText!: Text
+  private endTitleItem!: FlexItem
+  private endHeroText!: Text
+  private replayContent!: ElementContent
   private endProgressText!: Text
   private difficultyContent!: ElementContent
   private introBestText!: Text
   private hudModeText!: Text
   private placementText!: Text
   private endIconContent!: ElementContent
+  private viewer: SceneObject | null = null
   private musicButtonContents: ElementContent[] = []
   private debugButtonObject: SceneObject | null = null
   private debugPanelVisible = false
@@ -110,6 +121,14 @@ export class StepSweeperGameUI extends BaseScriptComponent {
     if (this.debugButtonObject) this.debugButtonObject.enabled = this.debugControls
   }
 
+  setViewer(viewer: SceneObject): void { this.viewer = viewer }
+
+  setArenaDimensions(width: number, depth: number): void {
+    this.objectivePanel.getTransform().setLocalPosition(new vec3(width / 2 + 43, 56, -depth / 2 + 78))
+    this.controlsPanel.getTransform().setLocalPosition(new vec3(-width / 2 - 38, 62, -depth / 2 + 78))
+    this.counterPanel.getTransform().setLocalPosition(new vec3(0, 28, -depth / 2 - 22))
+  }
+
   setSpatialAnchor(boardRoot: SceneObject): void {
     const boardTransform = boardRoot.getTransform()
     const transform = this.getSceneObject().getTransform()
@@ -152,19 +171,29 @@ export class StepSweeperGameUI extends BaseScriptComponent {
     this.beginPanelEntrance(this.hudPanel)
   }
 
-  showEnd(won: boolean, timeText: string, steps: number, flags: number, difficulty: string, bestTime: string, wins: number, score: number, isNewBest: boolean): void {
+  showEnd(won: boolean, timeText: string, steps: number, flags: number, difficulty: string, bestTime: string, wins: number, score: number, isNewBest: boolean, revealedSafe: number = 0, totalSafe: number = 0): void {
     this.introPanel.enabled = false
     this.hudPanel.enabled = false
     this.endPanel.enabled = true
     this.debugPanel.enabled = false
-    this.endTitleText.text = won ? "ROOM CLEARED!" : "MINE HIT"
-    this.endTitleText.textFill.color = won ? new vec4(0.2, 1, 0.7, 1) : new vec4(1, 0.28, 0.12, 1)
-    this.endStatsText.text = `${timeText}   •   ${steps} STEPS   •   ${flags} FLAGS`
-    this.endProgressText.text = won
-      ? `${isNewBest ? "NEW BEST!  •  " : ""}${difficulty}  •  SCORE ${score}  •  ${wins} WINS`
-      : `${difficulty}  •  BEST ${bestTime}  •  TRY AGAIN`
-    this.endProgressText.textFill.color = isNewBest ? new vec4(1, 0.88, 0.18, 1) : new vec4(0.72, 0.94, 1, 1)
+    this.endTitleText.text = won ? "Room cleared" : "Mine hit"
+    this.endTitleItem.overrideWidth = won ? 25 : 16
+    this.endTitleText.textFill.color = new vec4(0.94, 0.99, 1, 1)
+    this.endHeroText.text = `${revealedSafe} of ${totalSafe} tiles cleared`
+    this.endHeroText.textFill.color = won && isNewBest ? new vec4(0.65, 1, 0.82, 1) : new vec4(0.85, 0.96, 1, 1)
+    this.endProgressText.text = `${timeText}   ·   ${steps} ${steps === 1 ? "step" : "steps"}   ·   ${flags} ${flags === 1 ? "flag" : "flags"}`
     this.endIconContent.leadingIcon = won ? ICON_TROPHY : ICON_WARNING
+    this.replayContent.text = won ? "Play again" : "Try again"
+    // Place once in the current view, then keep it world anchored so the
+    // player can look back at the board without a head-locked overlay.
+    if (this.viewer) {
+      const camera = this.viewer.getTransform()
+      const direction = camera.getWorldRotation().multiplyVec3(vec3.back())
+      const up = camera.getWorldRotation().multiplyVec3(vec3.up())
+      const position = camera.getWorldPosition().add(direction.uniformScale(this.resultDistanceCm)).add(up.uniformScale(this.resultLiftCm))
+      this.endPanel.getTransform().setWorldPosition(position)
+      this.endPanel.getTransform().setWorldRotation(quat.lookAt(camera.getWorldPosition().sub(position), up))
+    }
     this.beginPanelEntrance(this.endPanel)
   }
 
@@ -234,31 +263,37 @@ export class StepSweeperGameUI extends BaseScriptComponent {
     // Keep the panel's inner edge outside the 300 cm grid (x = ±150)
     // with a 2 cm physical gap, then toe it inward toward the player.
     const objective = this.panel("ObjectivePanel", new vec3(188, 56, -72), 72, 78, hud)
+    this.objectivePanel = objective
     objective.getTransform().setLocalRotation(quat.angleAxis(Math.PI + 0.30, vec3.up()))
     const objectiveContent = objective.getChild(0)
     const objectiveFlex = objectiveContent.getComponent(FlexLayout.getTypeName()) as FlexLayout
-    const objectiveTitle = this.addText(objectiveContent, objectiveFlex, "◉  OBJECTIVE", "Subheadline", 62, 8)
+    const objectiveTitle = this.addArenaText(objectiveContent, objectiveFlex, "◉  OBJECTIVE", "Subheadline", 62, 8)
     objectiveTitle.textFill.color = new vec4(0.12, 0.95, 1, 1)
-    this.addText(objectiveContent, objectiveFlex, "CLEAR ALL SAFE TILES", "Headline2", 62, 10)
-    this.addText(objectiveContent, objectiveFlex, "AVOID THE MINES", "Body", 62, 8)
-    this.timerText = this.addText(objectiveContent, objectiveFlex, "TIME  00:00", "HeadlineXL", 62, 11)
-    this.hudModeText = this.addText(objectiveContent, objectiveFlex, "STANDARD  •  BEST —", "Caption", 62, 7)
-    this.guidanceText = this.addText(objectiveContent, objectiveFlex, "STEP ON A TILE TO REVEAL", "Callout", 62, 13)
+    this.addArenaText(objectiveContent, objectiveFlex, "CLEAR ALL SAFE TILES", "Headline2", 62, 10)
+    this.addArenaText(objectiveContent, objectiveFlex, "AVOID THE MINES", "Body", 62, 8)
+    this.timerText = this.addArenaText(objectiveContent, objectiveFlex, "TIME  00:00", "HeadlineXL", 62, 11)
+    this.hudModeText = this.addArenaText(objectiveContent, objectiveFlex, "STANDARD  •  BEST —", "Caption", 62, 7)
+    this.guidanceText = this.addArenaText(objectiveContent, objectiveFlex, "STEP ON A TILE TO REVEAL", "Callout", 62, 13)
 
     const controls = this.panel("ControlsPanel", new vec3(-185, 62, -72), 62, 92, hud)
+    this.controlsPanel = controls
     controls.getTransform().setLocalRotation(quat.angleAxis(Math.PI - 0.30, vec3.up()))
     const controlsContent = controls.getChild(0)
     const controlsFlex = controlsContent.getComponent(FlexLayout.getTypeName()) as FlexLayout
-    const controlsTitle = this.addText(controlsContent, controlsFlex, "CONTROLS", "Subheadline", 52, 8)
+    const controlsTitle = this.addArenaText(controlsContent, controlsFlex, "CONTROLS", "Subheadline", 52, 8)
     controlsTitle.textFill.color = new vec4(0.12, 0.95, 1, 1)
-    this.addButton(controlsContent, controlsFlex, "Restart", "RESTART", ICON_RESTART, 52, () => this._onRestart.invoke(), 14)
-    this.addButton(controlsContent, controlsFlex, "HudRecenter", "RECENTER", ICON_RESTART, 52, () => this._onRecenter.invoke(), 14)
-    this.musicButtonContents.push(this.addButton(controlsContent, controlsFlex, "HudToggleMusic", "MUTE", ICON_VOLUME_UP, 52, () => this._onToggleMusic.invoke(), 14))
+    this.addButton(controlsContent, controlsFlex, "Restart", "RESTART", ICON_RESTART, 52, () => this._onRestart.invoke(), 14).textSize = 200
+    this.addButton(controlsContent, controlsFlex, "HudRecenter", "RECENTER", ICON_RESTART, 52, () => this._onRecenter.invoke(), 14).textSize = 200
+    const musicContent = this.addButton(controlsContent, controlsFlex, "HudToggleMusic", "MUTE", ICON_VOLUME_UP, 52, () => this._onToggleMusic.invoke(), 14)
+    musicContent.textSize = 200
+    this.musicButtonContents.push(musicContent)
     const debugContent = this.addButton(controlsContent, controlsFlex, "HudToggleDebug", "DEBUG", ICON_WARNING, 52, () => this.toggleDebugPanel(), 14)
     this.debugButtonObject = debugContent.getSceneObject()
-    this.placementText = this.addText(controlsContent, controlsFlex, "PLACEMENT READY", "Caption", 52, 7)
+    debugContent.textSize = 200
+    this.placementText = this.addArenaText(controlsContent, controlsFlex, "PLACEMENT READY", "Caption", 52, 7)
 
     const counters = this.panel("BoardFrontCounters", new vec3(0, 28, -168), 190, 34, hud)
+    this.counterPanel = counters
     counters.getTransform().setLocalRotation(quat.angleAxis(Math.PI, vec3.up()))
     const counterContent = counters.getChild(0)
     const counterFlex = counterContent.getComponent(FlexLayout.getTypeName()) as FlexLayout
@@ -271,25 +306,56 @@ export class StepSweeperGameUI extends BaseScriptComponent {
   }
 
   private buildEnd(): SceneObject {
-    const panel = this.panel("SpecsSweeperEnd", new vec3(0, 132, -170), 108, 70)
+    const panel = this.panel("SpecsSweeperEnd", new vec3(0, 132, -170), 60, 31)
     panel.getTransform().setLocalRotation(quat.angleAxis(Math.PI, vec3.up()))
+    const plate = panel.getComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
+    plate.backgroundColor = this.resultPanelColor
+    plate.borderSize = 0.13
+    plate.borderColor = new vec4(0.48, 0.83, 0.94, 0.7)
+    plate.cornerRadius = 3
     const content = panel.getChild(0)
     const flex = content.getComponent(FlexLayout.getTypeName()) as FlexLayout
+    flex.rowGap = 0.8
+    flex.paddingTop = 2
+    flex.paddingBottom = 2
+    const heading = global.scene.createSceneObject("EndHeading")
+    heading.setParent(content)
+    const headingFlex = heading.createComponent(FlexLayout.getTypeName()) as FlexLayout
+    headingFlex.autoDiscoverItemsOnStart = false
+    headingFlex.width = 51
+    headingFlex.height = 6
+    headingFlex.direction = FlexDirection.Row
+    headingFlex.alignItems = FlexAlign.Center
+    headingFlex.justifyContent = FlexJustify.Center
+    headingFlex.columnGap = 1
+    this.addItem(flex, heading, 51, 6)
     const iconRow = global.scene.createSceneObject("EndIcon")
-    iconRow.setParent(content)
+    iconRow.setParent(heading)
     this.endIconContent = iconRow.createComponent(ElementContent.getTypeName()) as ElementContent
     this.endIconContent.leadingIcon = ICON_TROPHY
     this.endIconContent.iconLayout = "left"
-    this.endIconContent.leadingIconSize = 7
-    this.endIconContent.sizeOverride = new vec2(10, 8)
-    this.addItem(flex, iconRow, 10, 8)
-    this.endTitleText = this.addText(content, flex, "ROOM CLEARED!", "Title2", 96, 11)
-    this.endStatsText = this.addText(content, flex, "00:00 • 0 STEPS • 0 FLAGS", "Body", 96, 8)
-    this.endProgressText = this.addText(content, flex, "STANDARD • BEST —", "Caption", 96, 8)
-    this.addButtonRow(content, flex, [
-      {name:"PlayAgain", label:"PLAY AGAIN", icon:ICON_RESTART, handler:() => this._onPlayAgain.invoke()},
-      {name:"EndCycleDifficulty", label:"CHANGE MODE", icon:ICON_TROPHY, handler:() => this._onCycleDifficulty.invoke()},
-    ])
+    this.endIconContent.leadingIconSize = 4
+    this.endIconContent.sizeOverride = new vec2(6, 6)
+    this.addItem(headingFlex, iconRow, 6, 6)
+    this.endTitleText = this.addText(heading, headingFlex, "Room cleared", "HeadlineXL", 25, 6)
+    this.endTitleItem = this.endTitleText.getSceneObject().getComponent(FlexItem.getTypeName()) as FlexItem
+    this.endHeroText = this.addText(content, flex, "0 of 30 tiles cleared", "Subheadline", 52, 5)
+    this.endProgressText = this.addText(content, flex, "00:00   ·   0 steps   ·   0 flags", "Caption", 52, 4)
+    this.replayContent = this.addButton(content, flex, "PlayAgain", "Play again", null, 52, () => this._onPlayAgain.invoke(), 8, "Primary")
+    const replay = this.replayContent.getSceneObject().getComponent(Button.getTypeName()) as Button
+    replay.setVariant({theme: "SnapOS2", style: "Primary", shape: "Capsule"})
+    const common: RoundedRectangleVisualState = {baseType: "Color", hasBorder: true, borderType: "Color", borderSize: 0.13, borderColor: new vec4(0.65, 0.94, 1, 1)}
+    const style: Partial<RoundedRectangleVisualParameters> = {
+      default: {...common, baseColor: this.replayColor},
+      hovered: {...common, baseColor: new vec4(0.24, 0.64, 0.75, 1), borderColor: new vec4(0.88, 1, 1, 1)},
+      triggered: {...common, baseColor: new vec4(0.42, 0.78, 0.87, 1), borderColor: new vec4(1, 1, 1, 1)},
+      inactive: {...common, baseColor: new vec4(0.12, 0.24, 0.28, 0.5)},
+    }
+    // Configure the native visual at construction, before its state map is
+    // initialized. This preserves hover/press behavior without theme gradients.
+    const replayVisual = new RoundedRectangleVisual({sceneObject: replay.getSceneObject(), style, transparent: true})
+    replay.visual = replayVisual
+    replayVisual.cornerRadius = 4
     return panel
   }
 
@@ -373,7 +439,29 @@ export class StepSweeperGameUI extends BaseScriptComponent {
     flex.paddingBottom = 3
     flex.paddingLeft = 4
     flex.paddingRight = 4
+    // Add the native halo after Content so existing child-index access stays valid.
+    if (name === "ObjectivePanel" || name === "ControlsPanel" || name === "BoardFrontCounters") {
+      const rimObject = global.scene.createSceneObject(`${name}LightRim`)
+      rimObject.setParent(panel)
+      rimObject.getTransform().setLocalPosition(new vec3(0, 0, -0.1))
+      const rim = rimObject.createComponent(RoundedRectangle.getTypeName()) as RoundedRectangle
+      rim.size = new vec2(width + 1.8, height + 1.8)
+      rim.gradient = false
+      rim.backgroundColor = new vec4(0, 0, 0, 0)
+      rim.blendMode = RoundedRectBlendMode.Normal
+      rim.cornerRadius = 4.8
+      rim.border = true
+      rim.borderSize = 0.9
+      rim.borderColor = new vec4(0.05, 0.85, 1, 0.16)
+    }
     return panel
+  }
+
+  private addArenaText(parent: SceneObject, flex: FlexLayout, value: string, role: TextRole, width: number, height: number): Text {
+    const text = this.addText(parent, flex, value, role, width, height)
+    text.size *= 2.2
+    text.horizontalOverflow = HorizontalOverflow.Wrap
+    return text
   }
 
   private addText(parent: SceneObject, flex: FlexLayout, value: string, role: TextRole, width: number, height: number): Text {
@@ -393,10 +481,11 @@ export class StepSweeperGameUI extends BaseScriptComponent {
     return text
   }
 
-  private addButton(parent: SceneObject, flex: FlexLayout, name: string, label: string, icon: Texture | null, width: number, handler: () => void, height: number = 10): ElementContent {
+  private addButton(parent: SceneObject, flex: FlexLayout, name: string, label: string, icon: Texture | null, width: number, handler: () => void, height: number = 10, style?: string): ElementContent {
     const object = global.scene.createSceneObject(name)
     object.setParent(parent)
     const button = object.createComponent(Button.getTypeName()) as Button
+    if (style) button.setTheme("SnapOS2", style)
     button.size = new vec3(width, height, 1)
     button.onTriggerUp.add(handler)
     const content = object.createComponent(ElementContent.getTypeName()) as ElementContent
@@ -464,8 +553,10 @@ export class StepSweeperGameUI extends BaseScriptComponent {
       this.addItem(labelFlex, iconObject, 7, 7)
     }
     const labelText = this.addText(labelRow, labelFlex, label, "Caption", icon ? 62 : 76, 7)
+    labelText.size *= 2.2
     labelText.textFill.color = new vec4(0.78, 0.98, 1, 1)
     const valueText = this.addText(metric, metricFlex, value, "HeadlineXL", 78, 12)
+    valueText.size *= 2.2
     valueText.textFill.color = new vec4(0.3, 1, 0.92, 1)
     return valueText
   }

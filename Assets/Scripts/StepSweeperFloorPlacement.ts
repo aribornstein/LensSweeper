@@ -13,6 +13,14 @@ export class StepSweeperFloorPlacement {
   constructor(private boardRoot: SceneObject) {}
 
   placeRelativeToCamera(cameraObject: SceneObject, forwardDistanceCm: number, floorOffsetCm: number): void {
+    this.placeAtHeading(cameraObject, forwardDistanceCm, cameraObject.getTransform().getWorldPosition().y + floorOffsetCm)
+  }
+
+  placeAtPreviewFloor(cameraObject: SceneObject, forwardDistanceCm: number, worldFloorY: number): void {
+    this.placeAtHeading(cameraObject, forwardDistanceCm, worldFloorY)
+  }
+
+  private placeAtHeading(cameraObject: SceneObject, forwardDistanceCm: number, worldFloorY: number): void {
     const cameraTransform = cameraObject.getTransform()
     const cameraPosition = cameraTransform.getWorldPosition()
     // Lens transforms call local +Z "forward", while a Camera looks along local -Z.
@@ -22,7 +30,7 @@ export class StepSweeperFloorPlacement {
 
     this.boardRoot.getTransform().setWorldPosition(new vec3(
       cameraPosition.x + forward.x * forwardDistanceCm,
-      cameraPosition.y + floorOffsetCm,
+      worldFloorY,
       cameraPosition.z + forward.z * forwardDistanceCm,
     ))
     this.boardRoot.getTransform().setWorldRotation(quat.lookAt(forward, vec3.up()))
@@ -37,7 +45,9 @@ export class StepSweeperFloorPlacement {
   ): void {
     const generation = ++this.requestGeneration
     if (global.deviceInfoSystem.isEditor()) {
-      this.placeRelativeToCamera(cameraObject, forwardDistanceCm, previewFloorOffsetCm)
+      // Interactive scenery has a fixed floor. Camera height changes (crouching,
+      // flying the editor camera, or a close-up) must not change that plane.
+      this.placeAtPreviewFloor(cameraObject, forwardDistanceCm, previewFloorOffsetCm)
       callback({placedOnSurface: false, reason: "preview"})
       return
     }

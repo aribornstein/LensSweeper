@@ -1,54 +1,49 @@
 import {StepSweeperBoardManager} from "./StepSweeperBoardManager"
 import {StepSweeperCellData} from "./StepSweeperCellData"
+import {StepSweeperSpatialClue} from "./StepSweeperSpatialClue"
+import {StepSweeperArena} from "./StepSweeperArena"
+import {StepSweeperBoardEffects, StepSweeperFlagVisual} from "./StepSweeperBoardEffects"
 import {Interactable} from "SpectaclesInteractionKit.lspkg/Components/Interaction/Interactable/Interactable"
 import Event from "SpectaclesInteractionKit.lspkg/Utils/Event"
 
-const RED_FLAG_PREFAB = requireAsset("../Generative 3D Package.lspkg/06a9944f-f90c-7268-8000-a9f4115d4e44-model.glb") as ObjectPrefab
-
 type CellVisual = {
   root: SceneObject
-  base: RenderMeshVisual
-  deck: SceneObject
-  deckVisual: RenderMeshVisual
-  clueObject: SceneObject
-  clue: Text
+  wash: SceneObject
+  washMaterial: Material
+  corners: SceneObject
+  cornerVisual: RenderMeshVisual
+  revealCorners: SceneObject
+  revealCornerMaterial: Material
+  scan: SceneObject
+  clue: StepSweeperSpatialClue
   mine: SceneObject | null
-  flag: SceneObject | null
+  flag: StepSweeperFlagVisual | null
 }
-
 type RevealAnimation = {visual: CellVisual, startedAt: number}
-type PulseVisual = {object: SceneObject, phase: number}
-type ShockwaveAnimation = {object: SceneObject, startedAt: number, origin: vec3, direction: vec3}
-type ExplosionParticle = {
-  object: SceneObject
-  startedAt: number
-  lifetime: number
-  origin: vec3
-  velocity: vec3
-  baseScale: vec3
-  spin: number
-}
-type ExplosionFlash = {object: SceneObject, startedAt: number, lifetime: number, baseScale: number}
+type FloorRect = [number, number, number, number]
 
-/**
- * Specs Sweeper board presentation — high-cardinality in-world board presentation.
- * Owns tile meshes, clue text, generated flag props, highlights, boundary, and small effects.
- */
+/** World-anchored floor information, spatial clues and localized feedback. */
 @component
 export class StepSweeperCellViewUI extends BaseScriptComponent {
   @ui.label('<span style="color: #22D3EE;">Specs Sweeper board presentation</span>')
   @ui.separator
   @ui.group_start("References")
-  @input @hint("Shared unit box mesh used by every tile and marker") tileMesh!: RenderMesh
-  @input @hint("Nearly transparent unrevealed tile material") unrevealedMaterial!: Material
-  @input @hint("Cyan safe reveal material") revealedMaterial!: Material
-  @input @hint("Orange/red mine material") mineMaterial!: Material
-  @input @hint("Orange holographic flag material") flagMaterial!: Material
-  @input @hint("Cyan current-player cell highlight") playerHighlightMaterial!: Material
-  @input @hint("Yellow target cell highlight") targetHighlightMaterial!: Material
-  @input @hint("Cyan board boundary material") boundaryMaterial!: Material
-  @input @hint("Asset Library hologram material used by thin frame rails and beacons") hologramMaterial!: Material
-  @input @hint("Asset Library scan material used by the targeted cell") scanMaterial!: Material
+  @input @hint("Shared unit box mesh for floor washes and scan lines") tileMesh!: RenderMesh
+  @input @hint("Unrevealed material reference") unrevealedMaterial!: Material
+  @input @hint("Safe reveal material reference") revealedMaterial!: Material
+  @input @hint("Mine material reference") mineMaterial!: Material
+  @input @hint("Flag material reference") flagMaterial!: Material
+  @input @hint("Player highlight material reference") playerHighlightMaterial!: Material
+  @input @hint("Target highlight material reference") targetHighlightMaterial!: Material
+  @input @hint("Unlit template for floor markings, props and clues") boundaryMaterial!: Material
+  @input @hint("Legacy frame material reference") hologramMaterial!: Material
+  @input @hint("Legacy scan material reference") scanMaterial!: Material
+  @ui.group_end
+  @ui.group_start("Floor appearance")
+  @input @hint("Covered cell corner-mark color") @widget(new ColorWidget()) floorMarkColor: vec4 = new vec4(0.2, 0.88, 1, 0.7)
+  @input @hint("Subtle covered-cell blue wash opacity") @widget(new SliderWidget(0, 0.15, 0.005)) floorWashOpacity: number = 0.075
+  @input @hint("Floor grid line opacity") @widget(new SliderWidget(0, 0.8, 0.01)) gridOpacity: number = 0.52
+  @input @hint("Floor scan and clue arrival duration, in seconds") @widget(new SliderWidget(0.2, 0.8, 0.02)) revealDuration: number = 0.65
   @ui.group_end
 
   private board: StepSweeperBoardManager | null = null
@@ -56,515 +51,298 @@ export class StepSweeperCellViewUI extends BaseScriptComponent {
   private boardContentRoot: SceneObject | null = null
   private playerHighlight: SceneObject | null = null
   private targetHighlight: SceneObject | null = null
-  private simulatedPlayer: SceneObject | null = null
-  private celebration: ShockwaveAnimation[] = []
-  private explosionParticles: ExplosionParticle[] = []
-  private explosionPool: SceneObject[] = []
-  private explosionFlashes: ExplosionFlash[] = []
-  private explosionSparkMaterial: Material | null = null
-  private explosionCoreMaterial: Material | null = null
+  private effects: StepSweeperBoardEffects | null = null
   private revealAnimations: RevealAnimation[] = []
-  private frameBeacons: PulseVisual[] = []
   private startSequenceStartedAt = -1
   private effectsStarted = false
+  private clueCamera: SceneObject | null = null
+  private cornerMesh!: RenderMesh
+  private coveredCorners!: Material
+  private safeCorners!: Material
+  private activeCorners!: Material
+  private targetCorners!: Material
+  private quietGrid!: Material
+  private safeFloor: RenderMeshVisual | null = null
   private tapBindings: {interactable: Interactable, cell: StepSweeperCellData}[] = []
   public readonly onCellTapped = new Event<StepSweeperCellData>()
+
+  setClueCamera(camera: SceneObject): void {
+    this.clueCamera = camera
+    this.effects?.setViewer(camera)
+  }
 
   build(board: StepSweeperBoardManager): void {
     this.clear()
     this.board = board
     this.boardContentRoot = global.scene.createSceneObject("BoardContent")
     this.boardContentRoot.setParent(this.sceneObject)
-    this.prepareExplosionMaterials()
+    if (!this.effects) this.effects = new StepSweeperBoardEffects(this.sceneObject, this.tileMesh, this.boundaryMaterial)
+    if (this.clueCamera) this.effects.setViewer(this.clueCamera)
+    this.cornerMesh = this.floorMesh(this.cornerRects(board.cellSizeCm * 0.46, board.cellSizeCm * 0.46, 5, 0.48))
+    this.coveredCorners = this.floorMaterial(this.floorMarkColor)
+    this.safeCorners = this.floorMaterial(new vec4(0.3, 0.85, 0.94, 0.32))
+    this.activeCorners = this.floorMaterial(new vec4(0.83, 1, 1, 0.9))
+    this.targetCorners = this.floorMaterial(new vec4(0.68, 0.95, 1, 0.7))
+    this.quietGrid = this.floorMaterial(new vec4(0.2, 0.7, 0.85, this.gridOpacity))
     // per-tile factory — Hard Rule 3 grid-cell carve-out (N = 25–49)
     for (const cell of board.cells) this.visuals.push(this.createCell(cell))
-    // The cells and their Interactable components are created during the
-    // parent's OnStart phase, so their startup lifecycle has completed inline.
-    for (const binding of this.tapBindings) {
-      binding.interactable.onTriggerStart.add(() => this.onCellTapped.invoke(binding.cell))
-    }
-    this.createGridLines(board)
-    this.createBoundary(board)
-    this.playerHighlight = this.createBox("PlayerCellHighlight", this.boardContentRoot, vec3.zero(), new vec3(board.cellSizeCm * 0.88, 0.24, board.cellSizeCm * 0.88), this.playerHighlightMaterial)
-    this.targetHighlight = this.createBox("TargetCellHighlight", this.boardContentRoot, vec3.zero(), new vec3(board.cellSizeCm * 0.72, 0.32, board.cellSizeCm * 0.72), this.scanMaterial)
-    this.simulatedPlayer = this.createBox("SimulatedPlayer", this.boardContentRoot, vec3.zero(), new vec3(8, 3, 8), this.playerHighlightMaterial)
+    for (const binding of this.tapBindings) binding.interactable.onTriggerStart.add(() => this.onCellTapped.invoke(binding.cell))
+    this.createFieldLines(board)
+    new StepSweeperArena(this.boardContentRoot, this.boundaryMaterial, board.columns * board.cellSizeCm, board.rows * board.cellSizeCm, board.cellSizeCm)
+    const safeFloor = global.scene.createSceneObject("SafeFloorInsets")
+    safeFloor.setParent(this.boardContentRoot)
+    safeFloor.getTransform().setLocalPosition(new vec3(0, 0.19, 0))
+    this.safeFloor = safeFloor.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    this.safeFloor.renderOrder = -10
+    this.safeFloor.mainMaterial = this.floorMaterial(new vec4(0.06, 0.92, 0.64, 0.16))
+    safeFloor.enabled = false
+    this.playerHighlight = this.createFloorVisual("PlayerCellHighlight", this.boardContentRoot, this.cornerMesh, this.activeCorners, 0.7)
+    this.targetHighlight = this.createFloorVisual("TargetCellHighlight", this.boardContentRoot, this.cornerMesh, this.targetCorners, 0.6)
     this.playerHighlight.enabled = false
     this.targetHighlight.enabled = false
     if (!this.effectsStarted) {
       this.effectsStarted = true
-      this.createEvent("UpdateEvent").bind(() => this.animateHighlights())
+      this.createEvent("UpdateEvent").bind(() => this.animate())
+      this.createEvent("LateUpdateEvent").bind(() => {
+        if (!this.clueCamera) return
+        const position = this.clueCamera.getTransform().getWorldPosition()
+        for (const visual of this.visuals) visual.clue.faceViewer(position)
+      })
     }
     console.log(`[SpecsSweeper] BOARD_CREATED rows=${board.rows} columns=${board.columns} cellSize=${board.cellSizeCm}`)
   }
 
   reset(board: StepSweeperBoardManager): void {
+    this.revealAnimations = []
+    this.startSequenceStartedAt = -1
+    this.effects?.clearBurst()
     for (const cell of board.cells) this.refreshCell(cell, false)
     this.setTarget(null)
     this.setPlayer(null)
-    this.clearCelebration()
   }
 
-  playStartSequence(): void {
-    this.startSequenceStartedAt = getTime()
-    for (const visual of this.visuals) {
-      visual.deck.getTransform().setLocalPosition(new vec3(0, 0.65, 0))
-      visual.deck.getTransform().setLocalScale(new vec3(this.board!.cellSizeCm - 10, 0.45, this.board!.cellSizeCm - 10))
-    }
-  }
+  playStartSequence(): void { this.startSequenceStartedAt = getTime() }
 
   refreshCell(cell: StepSweeperCellData, animate: boolean): void {
-    const visual = this.visuals[this.index(cell)]
+    if (!this.board) return
+    const visual = this.visuals[this.board.index(cell)]
     if (!visual) return
-    const tileMaterial = cell.isRevealed
-      ? (cell.hasMine ? this.mineMaterial : this.revealedMaterial)
-      : this.unrevealedMaterial
-    visual.base.mainMaterial = tileMaterial
-    visual.deckVisual.mainMaterial = tileMaterial
-    if (cell.hasMine && cell.isRevealed && !visual.mine) visual.mine = this.createMine(visual.root)
+    visual.wash.enabled = !cell.isRevealed
+    visual.washMaterial.mainPass.baseColor = new vec4(0.2, 0.72, 0.86, this.floorWashOpacity)
+    visual.cornerVisual.mainMaterial = cell.isRevealed ? this.safeCorners : this.coveredCorners
+    visual.corners.getTransform().setLocalScale(vec3.one())
+    visual.revealCorners.enabled = false
+    visual.scan.enabled = false
+    if (cell.hasMine && cell.isRevealed && !visual.mine) visual.mine = this.effects!.createMine(visual.root)
     if (visual.mine) visual.mine.enabled = cell.hasMine && cell.isRevealed
-    if (cell.isFlagged && !cell.isRevealed) {
-      if (!visual.flag) visual.flag = this.createFlag(visual.root, cell)
-      visual.flag.enabled = true
-    } else if (visual.flag) {
-      visual.flag.enabled = false
-    }
-    // In room-scale play the first safe step is intentionally surrounded by a
-    // mine-free zone, so it is usually a zero. Keep zero clues visible to give
-    // immediate feedback that walking onto the tile actually revealed it.
+    const showFlag = cell.isFlagged && !cell.isRevealed
+    if (showFlag && !visual.flag) visual.flag = this.effects!.createFlag(visual.root, `RedFlag_${cell.row}_${cell.column}`)
+    if (visual.flag) visual.flag.set(showFlag, animate)
     visual.clue.enabled = cell.isRevealed && !cell.hasMine
-    if (visual.clue.enabled) {
-      visual.clue.text = String(cell.adjacentMineCount)
-      visual.clue.textFill.color = cell.adjacentMineCount === 0
-        ? new vec4(0.25, 1, 0.7, 1)
-        : cell.adjacentMineCount === 1
-          ? new vec4(0.2, 0.85, 1, 1)
-          : cell.adjacentMineCount === 2
-            ? new vec4(1, 0.85, 0.15, 1)
-            : new vec4(1, 0.3, 0.1, 1)
-    }
-    if (animate && cell.isRevealed) {
-      visual.deck.getTransform().setLocalPosition(new vec3(0, 6.4, 0))
-      visual.deck.getTransform().setLocalScale(new vec3(this.board!.cellSizeCm - 5, 2.1, this.board!.cellSizeCm - 5))
-      visual.clueObject.getTransform().setLocalScale(new vec3(0.58, 0.58, 0.58))
-      this.revealAnimations = this.revealAnimations.filter(item => item.visual !== visual)
+    visual.clue.root.getTransform().setLocalScale(vec3.one())
+    if (visual.clue.enabled) visual.clue.setValue(cell.adjacentMineCount, this.boundaryMaterial)
+    visual.clue.setRevealProgress(1)
+    this.revealAnimations = this.revealAnimations.filter(item => item.visual !== visual)
+    // Other mines get quiet floor pins; the struck mine alone owns a burst.
+    if (animate && cell.isRevealed && !cell.hasMine) {
+      visual.wash.enabled = true
+      visual.revealCorners.enabled = true
+      visual.clue.setRevealProgress(0)
       this.revealAnimations.push({visual, startedAt: getTime()})
-    } else if (!cell.isRevealed) {
-      this.restoreClosedTile(visual)
     }
+    this.refreshSafeFloor()
+  }
+
+  private refreshSafeFloor(): void {
+    if (!this.board || !this.safeFloor) return
+    const rectangles: FloorRect[] = []
+    const half = this.board.cellSizeCm / 2 - 2
+    for (let i = 0; i < this.visuals.length; i++) {
+      if (!this.visuals[i].clue.enabled || this.board.cells[i].adjacentMineCount !== 0) continue
+      const position = this.board.boardLocalPosition(this.board.cells[i], 0)
+      rectangles.push([position.x - half, position.z - half, position.x + half, position.z + half])
+    }
+    this.safeFloor.getSceneObject().enabled = rectangles.length > 0
+    if (rectangles.length > 0) this.safeFloor.mesh = this.floorMesh(rectangles)
   }
 
   revealAllMines(board: StepSweeperBoardManager): void {
-    for (const cell of board.cells) {
-      if (cell.hasMine) {
-        cell.isRevealed = true
-        this.refreshCell(cell, true)
-      }
+    for (const cell of board.cells) if (cell.hasMine) {
+      cell.isRevealed = true
+      this.refreshCell(cell, false)
     }
   }
 
   setDebugMines(board: StepSweeperBoardManager, visible: boolean): void {
     for (const cell of board.cells) {
       if (!cell.hasMine || cell.isRevealed) continue
-      const visual = this.visuals[this.index(cell)]
-      if (!visual) continue
-      if (visible && !visual.mine) visual.mine = this.createMine(visual.root)
+      const visual = this.visuals[board.index(cell)]
+      if (visible && !visual.mine) visual.mine = this.effects!.createMine(visual.root)
       if (visual.mine) visual.mine.enabled = visible
     }
   }
 
   setPlayer(cell: StepSweeperCellData | null): void {
-    if (!this.board || !this.playerHighlight || !this.simulatedPlayer) return
-    const enabled = cell !== null
-    this.playerHighlight.enabled = enabled
-    this.simulatedPlayer.enabled = enabled
-    if (cell) {
-      const pos = this.board.boardLocalPosition(cell, 0.9)
-      this.playerHighlight.getTransform().setLocalPosition(pos)
-      this.simulatedPlayer.getTransform().setLocalPosition(pos.add(new vec3(0, 3, 0)))
-    }
+    if (!this.board || !this.playerHighlight) return
+    this.playerHighlight.enabled = cell !== null
+    if (cell) this.playerHighlight.getTransform().setLocalPosition(this.board.boardLocalPosition(cell, 0.7))
   }
 
   setTarget(cell: StepSweeperCellData | null): void {
     if (!this.board || !this.targetHighlight) return
     this.targetHighlight.enabled = cell !== null && !cell.isRevealed
-    if (cell) this.targetHighlight.getTransform().setLocalPosition(this.board.boardLocalPosition(cell, 1.35))
+    if (cell) this.targetHighlight.getTransform().setLocalPosition(this.board.boardLocalPosition(cell, 0.6))
   }
 
   playMineBurst(cell: StepSweeperCellData): void {
     if (!this.board) return
-    const center = this.board.boardLocalPosition(cell, 10)
-    this.createShockwave(center, this.mineMaterial)
-    this.createExplosionFlash(center)
-    this.createExplosionParticles(center)
+    this.effects!.playBurst(this.board.boardLocalPosition(cell, 0.8), this.board.cellSizeCm, this.visuals[this.board.index(cell)].mine)
   }
 
   playVictory(): void {
-    // End-state feedback is handled by the anchored UI. Avoid decorative
-    // geometry so the board stays clear and the presentation remains cheap.
+    if (this.board) this.effects?.playVictory(this.board.columns * this.board.cellSizeCm, this.board.rows * this.board.cellSizeCm)
   }
 
   private createCell(cell: StepSweeperCellData): CellVisual {
-    if (!this.board) throw new Error("Board not assigned")
+    const board = this.board!
     const root = global.scene.createSceneObject(`Cell_${cell.row}_${cell.column}`)
-    root.setParent(this.boardContentRoot as SceneObject)
-    root.getTransform().setLocalPosition(this.board.boardLocalPosition(cell, 0))
-
-    const baseObject = this.createBox("ArmoredBase", root, new vec3(0, 1.0, 0), new vec3(this.board.cellSizeCm - 2, 2.0, this.board.cellSizeCm - 2), this.unrevealedMaterial)
-    const base = baseObject.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
-    const deck = this.createBox("InsetDeck", root, new vec3(0, 3.1, 0), new vec3(this.board.cellSizeCm - 6, 2.2, this.board.cellSizeCm - 6), this.unrevealedMaterial)
-    const deckVisual = deck.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
-
+    root.setParent(this.boardContentRoot!)
+    root.getTransform().setLocalPosition(board.boardLocalPosition(cell, 0))
+    const washMaterial = this.floorMaterial(new vec4(0.2, 0.72, 0.86, this.floorWashOpacity))
+    const wash = this.createBox("CoveredFloorWash", root, new vec3(0, 0.16, 0), new vec3(board.cellSizeCm - 2, 0.03, board.cellSizeCm - 2), washMaterial)
+    const corners = this.createFloorVisual("CellFloorCorners", root, this.cornerMesh, this.coveredCorners, 0.4)
+    const cornerVisual = corners.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    const revealCornerMaterial = this.floorMaterial(new vec4(1, 0.94, 0.8, 0))
+    const revealCorners = this.createFloorVisual("CellRevealCorners", root, this.cornerMesh, revealCornerMaterial, 0.55)
+    revealCorners.enabled = false
+    const scan = this.createBox("CellRevealScan", root, new vec3(0, 0.8, 0), new vec3(board.cellSizeCm * 0.86, 0.06, 0.45), this.activeCorners)
+    scan.enabled = false
     const collider = root.createComponent("Physics.ColliderComponent") as ColliderComponent
     const shape = Shape.createBoxShape()
-    shape.size = new vec3(this.board.cellSizeCm - 5, 7, this.board.cellSizeCm - 5)
+    shape.size = new vec3(board.cellSizeCm - 5, 7, board.cellSizeCm - 5)
     collider.shape = shape
     collider.debugDrawEnabled = false
     const interactable = root.createComponent(Interactable.getTypeName()) as Interactable
     interactable.targetingMode = 3
     this.tapBindings.push({interactable, cell})
-
-    const clueObject = global.scene.createSceneObject("Clue")
-    clueObject.setParent(root)
-    clueObject.getTransform().setLocalPosition(new vec3(0, 4.2, 0))
-    // Lay the text on the floor and turn its top edge toward the board's entry
-    // side, so clues read upright as the player walks onto the grid.
-    const floorRotation = quat.angleAxis(-Math.PI / 2, vec3.right())
-    const uprightFromEntry = quat.angleAxis(Math.PI, vec3.forward())
-    clueObject.getTransform().setLocalRotation(floorRotation.multiply(uprightFromEntry))
-    const clue = clueObject.createComponent("Component.Text") as Text
-    clue.text = ""
-    clue.size = 780
-    clue.weight = 800
-    clue.depthTest = false
-    clue.renderOrder = 120
-    clue.horizontalAlignment = HorizontalAlignment.Center
-    clue.verticalAlignment = VerticalAlignment.Center
-    clue.layoutRect = Rect.create(-21, 21, -21, 21)
-    clue.outlineSettings.enabled = true
-    clue.outlineSettings.size = 0.32
-    clue.outlineSettings.fill.color = new vec4(0.005, 0.025, 0.04, 1)
-    clue.backgroundSettings.enabled = true
-    clue.backgroundSettings.fill.color = new vec4(0.005, 0.025, 0.04, 0.82)
-    clue.backgroundSettings.margins = Rect.create(1.8, 1.8, 1.8, 1.8)
-    clue.backgroundSettings.cornerRadius = 0.22
-    clue.enabled = false
-
-    return {root, base, deck, deckVisual, clueObject, clue, mine: null, flag: null}
+    const clue = new StepSweeperSpatialClue(root, this.tileMesh, this.boundaryMaterial, board.cellSizeCm)
+    return {root, wash, washMaterial, corners, cornerVisual, revealCorners, revealCornerMaterial, scan, clue, mine: null, flag: null}
   }
 
-  private createFlag(parent: SceneObject, cell: StepSweeperCellData): SceneObject {
-    const flag = RED_FLAG_PREFAB.instantiate(parent)
-    flag.name = `RedFlag_${cell.row}_${cell.column}`
-    flag.getTransform().setLocalPosition(new vec3(0, 2.2, 0))
-    flag.getTransform().setLocalRotation(quat.angleAxis(-Math.PI * 0.5, vec3.up()))
-    flag.getTransform().setLocalScale(new vec3(26, 26, 26))
-    return flag
-  }
-
-  private createMine(parent: SceneObject): SceneObject {
-    if (!this.board) throw new Error("Board not assigned")
-    const mine = global.scene.createSceneObject("Mine")
-    mine.setParent(parent)
-    mine.getTransform().setLocalPosition(new vec3(0, 6, 0))
-    this.createBox("MineCore", mine, vec3.zero(), new vec3(11, 7, 11), this.mineMaterial)
-    this.createBox("MineRailX", mine, vec3.zero(), new vec3(22, 2.2, 3), this.mineMaterial)
-    this.createBox("MineRailZ", mine, vec3.zero(), new vec3(3, 2.2, 22), this.mineMaterial)
-    this.createBox("MineFuse", mine, new vec3(0, 6, 0), new vec3(3, 9, 3), this.flagMaterial)
-    for (let i = 0; i < 4; i++) {
-      const angle = i * Math.PI * 0.5
-      const tip = this.createBox(`MineTip-${i}`, mine, new vec3(Math.cos(angle) * 11, 0, Math.sin(angle) * 11), new vec3(4, 4, 4), this.mineMaterial)
-      tip.getTransform().setLocalRotation(quat.angleAxis(Math.PI * 0.25, vec3.up()))
+  private createFieldLines(board: StepSweeperBoardManager): void {
+    const width = board.columns * board.cellSizeCm, depth = board.rows * board.cellSizeCm
+    const rectangles: FloorRect[] = []
+    for (let c = 1; c < board.columns; c++) {
+      const x = -width / 2 + c * board.cellSizeCm
+      rectangles.push([x - 0.3, -depth / 2, x + 0.3, depth / 2])
     }
-    return mine
-  }
-
-  private createShockwave(center: vec3, material: Material): void {
-    for (let i = 0; i < 4; i++) {
-      const angle = i * Math.PI * 0.5
-      const bar = this.createBox(`Shockwave-${i}`, this.sceneObject, center, new vec3(3, 0.3, 22), material)
-      bar.getTransform().setLocalRotation(quat.angleAxis(angle, vec3.up()))
-      this.celebration.push({
-        object: bar,
-        startedAt: getTime(),
-        origin: center,
-        direction: new vec3(Math.cos(angle), 0, Math.sin(angle)),
-      })
+    for (let r = 1; r < board.rows; r++) {
+      const z = -depth / 2 + r * board.cellSizeCm
+      rectangles.push([-width / 2, z - 0.3, width / 2, z + 0.3])
     }
+    this.createFloorVisual("FieldGrid", this.boardContentRoot!, this.floorMesh(rectangles), this.quietGrid, 0.23)
+    this.createFloorVisual("FieldBoundaryCorners", this.boardContentRoot!, this.floorMesh(this.cornerRects(width / 2, depth / 2, 12, 0.65)), this.coveredCorners, 0.3)
   }
 
-  private createExplosionParticles(center: vec3): void {
-    const particleCount = 24
+  private animate(): void {
+    if (!this.board) return
     const now = getTime()
-    for (let i = 0; i < particleCount; i++) {
-      const particle = this.acquireExplosionParticle(i)
-      const angle = i * 2.399963229728653
-      const spread = 58 + this.hash(i, 1) * 62
-      const upward = 72 + this.hash(i, 2) * 68
-      const isDebris = i % 4 === 0
-      const width = isDebris ? 8 : 4 + this.hash(i, 3) * 2.5
-      const height = isDebris ? 8 : 14 + this.hash(i, 4) * 10
-      const scale = new vec3(width, height, width)
-      const visual = particle.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
-      visual.mainMaterial = isDebris
-        ? (this.explosionCoreMaterial as Material)
-        : (this.explosionSparkMaterial as Material)
-      visual.mainMaterial.mainPass.depthTest = false
-      visual.mainMaterial.mainPass.depthWrite = false
-      visual.renderOrder = 300
-      particle.enabled = true
-      particle.getTransform().setLocalPosition(center)
-      particle.getTransform().setLocalScale(scale)
-      particle.getTransform().setLocalRotation(quat.angleAxis(angle, vec3.up()))
-      this.explosionParticles.push({
-        object: particle,
-        startedAt: now,
-        lifetime: 1.15 + this.hash(i, 5) * 0.45,
-        origin: center,
-        velocity: new vec3(Math.cos(angle) * spread, upward, Math.sin(angle) * spread),
-        baseScale: scale,
-        spin: (this.hash(i, 6) * 2 - 1) * 11,
-      })
+    if (this.targetHighlight?.enabled) {
+      const scale = 0.98 + Math.sin(now * 3) * 0.01
+      this.targetHighlight.getTransform().setLocalScale(new vec3(scale, 1, scale))
     }
-  }
-
-  private createExplosionFlash(center: vec3): void {
-    const flash = this.createBox("ExplosionFlash", this.sceneObject, center, new vec3(12, 12, 12), this.explosionCoreMaterial as Material)
-    const visual = flash.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
-    visual.mainMaterial.mainPass.depthTest = false
-    visual.mainMaterial.mainPass.depthWrite = false
-    visual.renderOrder = 299
-    this.explosionFlashes.push({object: flash, startedAt: getTime(), lifetime: 0.7, baseScale: 12})
-  }
-
-  private acquireExplosionParticle(index: number): SceneObject {
-    for (const particle of this.explosionPool) {
-      if (!particle.enabled) return particle
+    if (this.startSequenceStartedAt >= 0) {
+      let complete = true
+      for (let i = 0; i < this.visuals.length; i++) {
+        const visual = this.visuals[i]
+        if (visual.clue.enabled) continue
+        const delay = (Math.floor(i / this.board.columns) + i % this.board.columns) * 0.025
+        const progress = Math.max(0, Math.min(1, (now - this.startSequenceStartedAt - delay) / 0.24))
+        if (progress < 1) complete = false
+        visual.corners.getTransform().setLocalScale(new vec3(0.9 + progress * 0.1, 1, 0.9 + progress * 0.1))
+      }
+      if (complete) this.startSequenceStartedAt = -1
     }
-    const particle = this.createBox(`ExplosionParticle-${index}`, this.sceneObject, vec3.zero(), vec3.one(), this.explosionSparkMaterial as Material)
-    particle.enabled = false
-    this.explosionPool.push(particle)
-    return particle
-  }
-
-  private hash(index: number, salt: number): number {
-    const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453
-    return value - Math.floor(value)
-  }
-
-  private prepareExplosionMaterials(): void {
-    if (!this.explosionSparkMaterial) {
-      this.explosionSparkMaterial = this.flagMaterial.clone()
-      this.explosionSparkMaterial.mainPass.depthTest = false
-      this.explosionSparkMaterial.mainPass.depthWrite = false
-    }
-    if (!this.explosionCoreMaterial) {
-      this.explosionCoreMaterial = this.hologramMaterial.clone()
-      this.explosionCoreMaterial.mainPass.depthTest = false
-      this.explosionCoreMaterial.mainPass.depthWrite = false
-    }
-  }
-
-  private createBoundary(board: StepSweeperBoardManager): void {
-    const root = this.boardContentRoot as SceneObject
-    const width = board.columns * board.cellSizeCm
-    const depth = board.rows * board.cellSizeCm
-    this.createBox("BoundaryNorth", root, new vec3(0, 1, depth * 0.5 + 3), new vec3(width + 12, 2, 5), this.boundaryMaterial)
-    this.createBox("BoundarySouth", root, new vec3(0, 1, -depth * 0.5 - 3), new vec3(width + 12, 2, 5), this.boundaryMaterial)
-    this.createBox("BoundaryWest", root, new vec3(-width * 0.5 - 3, 1, 0), new vec3(5, 2, depth + 12), this.boundaryMaterial)
-    this.createBox("BoundaryEast", root, new vec3(width * 0.5 + 3, 1, 0), new vec3(5, 2, depth + 12), this.boundaryMaterial)
-    this.createFrameHardware(width, depth)
-  }
-
-  private createFrameHardware(width: number, depth: number): void {
-    const root = this.boardContentRoot as SceneObject
-    const cornerX = width * 0.5 - 5
-    const cornerZ = depth * 0.5 - 5
-    for (let xIndex = -1; xIndex <= 1; xIndex += 2) {
-      for (let zIndex = -1; zIndex <= 1; zIndex += 2) {
-        const x = cornerX * xIndex
-        const z = cornerZ * zIndex
-        const prefix = `FramePost-${xIndex}-${zIndex}`
-        this.createBox(`${prefix}-Foot`, root, new vec3(x, 1.8, z), new vec3(20, 3.6, 20), this.boundaryMaterial)
-        this.createBox(`${prefix}-Shaft`, root, new vec3(x, 12.5, z), new vec3(8, 21.5, 8), this.boundaryMaterial)
-        this.createBox(`${prefix}-LightStrip`, root, new vec3(x, 13, z), new vec3(9, 12, 9), this.hologramMaterial)
-        this.createBox(`${prefix}-Collar`, root, new vec3(x, 24, z), new vec3(14, 2.6, 14), this.boundaryMaterial)
-        const beacon = this.createBox(`${prefix}-Beacon`, root, new vec3(x, 27, z), new vec3(9, 3.4, 9), this.hologramMaterial)
-        this.frameBeacons.push({object: beacon, phase: this.frameBeacons.length * Math.PI * 0.5})
+    for (let i = this.revealAnimations.length - 1; i >= 0; i--) {
+      const {visual, startedAt} = this.revealAnimations[i]
+      const progress = Math.min(1, (now - startedAt) / this.revealDuration)
+      const pulse = Math.min(1, progress / 0.1) * (1 - Math.max(0, Math.min(1, (progress - 0.24) / 0.46)))
+      visual.revealCornerMaterial.mainPass.baseColor = new vec4(1, 0.94, 0.8, pulse * 0.95)
+      const scanProgress = Math.max(0, Math.min(1, (progress - 0.18) / 0.36))
+      visual.scan.enabled = progress >= 0.18 && progress < 0.54
+      visual.scan.getTransform().setLocalPosition(new vec3(0, 0.8, (0.5 - scanProgress) * this.board.cellSizeCm * 0.9))
+      visual.washMaterial.mainPass.baseColor = new vec4(0.2, 0.72, 0.86, Math.sin(progress * Math.PI) * 0.065)
+      visual.clue.setRevealProgress(Math.max(0, Math.min(1, (progress - 0.37) / 0.43)))
+      if (progress >= 1) {
+        visual.scan.enabled = false
+        visual.wash.enabled = false
+        visual.revealCorners.enabled = false
+        visual.cornerVisual.mainMaterial = this.safeCorners
+        visual.clue.setRevealProgress(1)
+        this.revealAnimations.splice(i, 1)
       }
     }
-
-    // Layered outer rails give the board a readable physical silhouette from
-    // shallow viewing angles without adding heavy imported geometry.
-    this.createBox("FrameRailNorth", root, new vec3(0, 5.8, cornerZ), new vec3(width - 8, 3, 5), this.hologramMaterial)
-    this.createBox("FrameRailSouth", root, new vec3(0, 5.8, -cornerZ), new vec3(width - 8, 3, 5), this.hologramMaterial)
-    this.createBox("FrameRailWest", root, new vec3(-cornerX, 5.8, 0), new vec3(5, 3, depth - 8), this.hologramMaterial)
-    this.createBox("FrameRailEast", root, new vec3(cornerX, 5.8, 0), new vec3(5, 3, depth - 8), this.hologramMaterial)
+    this.effects?.update(now)
   }
 
-  private createGridLines(board: StepSweeperBoardManager): void {
-    const root = this.boardContentRoot as SceneObject
-    const width = board.columns * board.cellSizeCm
-    const depth = board.rows * board.cellSizeCm
-    for (let column = 1; column < board.columns; column++) {
-      const x = -width * 0.5 + column * board.cellSizeCm
-      this.createBox(`GridColumn-${column}`, root, new vec3(x, 0.72, 0), new vec3(0.72, 0.85, depth), this.boundaryMaterial)
-    }
-    for (let row = 1; row < board.rows; row++) {
-      const z = -depth * 0.5 + row * board.cellSizeCm
-      this.createBox(`GridRow-${row}`, root, new vec3(0, 0.72, z), new vec3(width, 0.85, 0.72), this.boundaryMaterial)
-    }
+  private floorMaterial(color: vec4): Material {
+    const material = this.boundaryMaterial.clone()
+    material.mainPass.baseColor = color
+    material.mainPass.blendMode = BlendMode.Normal
+    material.mainPass.depthTest = true
+    material.mainPass.depthWrite = false
+    return material
   }
 
-  private createBox(name: string, parent: SceneObject, position: vec3, scale: vec3, material: Material): SceneObject {
+  private cornerRects(x: number, z: number, length: number, thickness: number): FloorRect[] {
+    const rectangles: FloorRect[] = []
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const x0 = sx < 0 ? -x : x - length, z0 = sz < 0 ? -z : z - length
+      rectangles.push([x0, sz * z - thickness / 2, x0 + length, sz * z + thickness / 2])
+      rectangles.push([sx * x - thickness / 2, z0, sx * x + thickness / 2, z0 + length])
+    }
+    return rectangles
+  }
+
+  private floorMesh(rectangles: FloorRect[]): RenderMesh {
+    const builder = new MeshBuilder([{name: "position", components: 3}, {name: "normal", components: 3}, {name: "texture0", components: 2}])
+    builder.topology = MeshTopology.Triangles
+    builder.indexType = MeshIndexType.UInt16
+    for (const [x0, z0, x1, z1] of rectangles) {
+      const index = builder.getVerticesCount()
+      builder.appendVerticesInterleaved([x0, 0, z0, 0, 1, 0, 0, 0, x0, 0, z1, 0, 1, 0, 0, 1,
+        x1, 0, z0, 0, 1, 0, 1, 0, x1, 0, z1, 0, 1, 0, 1, 1])
+      builder.appendIndices([index, index + 1, index + 2, index + 2, index + 1, index + 3])
+    }
+    builder.updateMesh()
+    return builder.getMesh()
+  }
+
+  private createFloorVisual(name: string, parent: SceneObject, mesh: RenderMesh, material: Material, y: number): SceneObject {
     const object = global.scene.createSceneObject(name)
     object.setParent(parent)
-    object.getTransform().setLocalPosition(position)
-    object.getTransform().setLocalScale(scale)
+    object.getTransform().setLocalPosition(new vec3(0, y, 0))
     const visual = object.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
-    visual.mesh = this.tileMesh
+    visual.mesh = mesh
     visual.mainMaterial = material
     return object
   }
 
-  private animateHighlights(): void {
-    if (!this.board) return
-    const now = getTime()
-    if (this.targetHighlight?.enabled) {
-      const targetSize = this.board.cellSizeCm * (0.72 + Math.sin(now * 6) * 0.012)
-      this.targetHighlight.getTransform().setLocalScale(new vec3(targetSize, 0.32, targetSize))
-    }
-    if (this.playerHighlight?.enabled) {
-      const playerSize = this.board.cellSizeCm * (0.86 + Math.sin(now * 4) * 0.008)
-      this.playerHighlight.getTransform().setLocalScale(new vec3(playerSize, 0.26, playerSize))
-    }
-    if (this.simulatedPlayer?.enabled) {
-      const position = this.simulatedPlayer.getTransform().getLocalPosition()
-      this.simulatedPlayer.getTransform().setLocalPosition(new vec3(position.x, 4, position.z))
-    }
-    for (const pulse of this.frameBeacons) {
-      const glow = 1 + Math.sin(now * 2.4 + pulse.phase) * 0.08
-      pulse.object.getTransform().setLocalScale(new vec3(9 * glow, 3.4 + (glow - 1) * 4, 9 * glow))
-    }
-    this.animateStartSequence(now)
-    this.animateReveals()
-    this.animateShockwaves(now)
-    this.animateExplosionFlashes(now)
-    this.animateExplosionParticles(now)
-  }
-
-  private animateStartSequence(now: number): void {
-    if (this.startSequenceStartedAt < 0 || !this.board) return
-    let complete = true
-    for (let i = 0; i < this.visuals.length; i++) {
-      const visual = this.visuals[i]
-      if (visual.clue.enabled) continue
-      const delay = (Math.floor(i / this.board.columns) + (i % this.board.columns)) * 0.035
-      const progress = Math.max(0, Math.min(1, (now - this.startSequenceStartedAt - delay) / 0.28))
-      if (progress < 1) complete = false
-      const eased = 1 - Math.pow(1 - progress, 3)
-      const bounce = Math.sin(progress * Math.PI) * (1 - progress)
-      const size = this.board.cellSizeCm - 10 + eased * 4 + bounce * 2
-      visual.deck.getTransform().setLocalPosition(new vec3(0, 0.65 + eased * 2.45 + bounce * 0.8, 0))
-      visual.deck.getTransform().setLocalScale(new vec3(size, 0.45 + eased * 1.75, size))
-    }
-    if (complete) this.startSequenceStartedAt = -1
-  }
-
-  private animateShockwaves(now: number): void {
-    for (let i = this.celebration.length - 1; i >= 0; i--) {
-      const effect = this.celebration[i]
-      const progress = Math.min(1, (now - effect.startedAt) / 0.48)
-      const distance = 58 * (1 - Math.pow(1 - progress, 2))
-      effect.object.getTransform().setLocalPosition(effect.origin.add(effect.direction.uniformScale(distance)))
-      effect.object.getTransform().setLocalScale(new vec3(3 + progress * 5, 0.3, 22 * (1 - progress * 0.72)))
-      if (progress >= 1) {
-        effect.object.destroy()
-        this.celebration.splice(i, 1)
-      }
-    }
-  }
-
-  private animateExplosionParticles(now: number): void {
-    for (let i = this.explosionParticles.length - 1; i >= 0; i--) {
-      const particle = this.explosionParticles[i]
-      const elapsed = now - particle.startedAt
-      const progress = Math.min(1, elapsed / particle.lifetime)
-      const gravity = -95 * elapsed * elapsed
-      particle.object.getTransform().setLocalPosition(new vec3(
-        particle.origin.x + particle.velocity.x * elapsed,
-        particle.origin.y + particle.velocity.y * elapsed + gravity,
-        particle.origin.z + particle.velocity.z * elapsed,
-      ))
-      const size = Math.max(0.04, 1 - progress * progress)
-      particle.object.getTransform().setLocalScale(particle.baseScale.uniformScale(size))
-      particle.object.getTransform().setLocalRotation(quat.angleAxis(particle.spin * elapsed, vec3.up()))
-      if (progress >= 1) {
-        particle.object.enabled = false
-        this.explosionParticles.splice(i, 1)
-      }
-    }
-  }
-
-  private animateExplosionFlashes(now: number): void {
-    for (let i = this.explosionFlashes.length - 1; i >= 0; i--) {
-      const flash = this.explosionFlashes[i]
-      const progress = Math.min(1, (now - flash.startedAt) / flash.lifetime)
-      const bloom = Math.sin(progress * Math.PI)
-      const scale = flash.baseScale + bloom * 42
-      flash.object.getTransform().setLocalScale(new vec3(scale, scale * 0.72, scale))
-      if (progress >= 1) {
-        flash.object.destroy()
-        this.explosionFlashes.splice(i, 1)
-      }
-    }
-  }
-
-  private animateReveals(): void {
-    const now = getTime()
-    for (let i = this.revealAnimations.length - 1; i >= 0; i--) {
-      const animation = this.revealAnimations[i]
-      const progress = Math.min(1, (now - animation.startedAt) / 0.28)
-      const eased = 1 - Math.pow(1 - progress, 3)
-      const bounce = Math.sin(progress * Math.PI) * (1 - progress)
-      const deckSize = this.board!.cellSizeCm - 6 + bounce * 2.5
-      animation.visual.deck.getTransform().setLocalPosition(new vec3(0, 1.55 + (1 - eased) * 4.85, 0))
-      animation.visual.deck.getTransform().setLocalScale(new vec3(deckSize, 0.82 + bounce * 0.5, deckSize))
-      const clueScale = 0.58 + eased * 0.42 + bounce * 0.16
-      animation.visual.clueObject.getTransform().setLocalScale(new vec3(clueScale, clueScale, clueScale))
-      if (progress >= 1) this.revealAnimations.splice(i, 1)
-    }
-  }
-
-  private restoreClosedTile(visual: CellVisual): void {
-    if (!this.board) return
-    visual.deck.getTransform().setLocalPosition(new vec3(0, 3.1, 0))
-    visual.deck.getTransform().setLocalScale(new vec3(this.board.cellSizeCm - 6, 2.2, this.board.cellSizeCm - 6))
-    visual.clueObject.getTransform().setLocalScale(vec3.one())
-  }
-
-  private clearCelebration(): void {
-    for (const particle of this.celebration) particle.object.destroy()
-    this.celebration = []
-    for (const particle of this.explosionParticles) particle.object.enabled = false
-    this.explosionParticles = []
-    for (const flash of this.explosionFlashes) flash.object.destroy()
-    this.explosionFlashes = []
+  private createBox(name: string, parent: SceneObject, position: vec3, scale: vec3, material: Material): SceneObject {
+    const object = this.createFloorVisual(name, parent, this.tileMesh, material, position.y)
+    object.getTransform().setLocalPosition(position)
+    object.getTransform().setLocalScale(scale)
+    return object
   }
 
   private clear(): void {
-    this.clearCelebration()
-    for (const particle of this.explosionPool) particle.destroy()
-    this.explosionPool = []
-    this.frameBeacons = []
+    this.effects?.clearBoard()
     this.startSequenceStartedAt = -1
     this.revealAnimations = []
     if (this.boardContentRoot) this.boardContentRoot.destroy()
     this.boardContentRoot = null
+    this.safeFloor = null
     this.visuals = []
     this.tapBindings = []
-  }
-
-  private index(cell: StepSweeperCellData): number {
-    return this.board ? this.board.index(cell) : -1
   }
 }

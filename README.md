@@ -22,11 +22,15 @@ Play in an unobstructed space with enough room for the entire board and safe mov
 ## Features
 
 - Floor-aligned world-space board using World Query surface detection on device.
-- Interactive tiles, red 3D flags, player and target highlights, and animated reveals.
-- Spatial objective, controls, and counter panels built with UIKit.
+- The room-scale arena has low cyan perimeter rails, four faceted corner posts, a stronger floor grid, and subtle mint insets for revealed empty cells. The architecture uses seven merged meshes and one shared inset mesh.
+- Full-size floor cells pulse their corners and scan across the pavement before the spatial clue rises. Extruded numbers continue to face the player.
+- Red pennants deploy and retract, then wave continuously with a pinned mast seam and a deforming cloth mesh.
+- Only the struck mine materializes as a faceted studded sphere, then breaks into eight pooled pieces and four brief sparks. One floor ring fades to a crossed-circle marker; other mines use small coral floor pins instead of red tile fills.
+- The result card follows after 0.95 seconds. It is compact, lifted above the view center and world anchored, with a cleared-tile summary, concise stats and one cyan replay action. Wins send a mint floor sweep.
+- Extruded clue numbers face the player; empty tiles use quiet floor markers.
+- Spatial objective, controls, and counter panels built with UIKit, with larger arena text, soft border rims, and matching console supports. Their positions adapt to the selected board footprint.
 - Timer, step count, flag count, and remaining-safe-tile tracking.
 - Three difficulty presets, with locally saved difficulty selection, best times, and win counts.
-- Round scores based on difficulty, completion time, and steps.
 - Background music, gameplay sound effects, victory animation, and mine-hit effects.
 - Preview-only movement and debugging controls for testing without walking.
 
@@ -82,7 +86,7 @@ Use Lens Studio's device pairing and Lens delivery workflow to run the project o
 
 On device, placement uses World Query to find an upward-facing surface. **FLOOR LOCKED** indicates a successful hit. If the panel displays **NO FLOOR — LOOK DOWN & RETRY**, look down and retry placement before playing.
 
-Preview uses camera-relative placement instead of real surface detection: by default, the board center is 340 cm forward and 150 cm below the camera.
+Preview places the board center 340 cm forward and uses a fixed world floor height (`emulatorFloorY`, default −170 cm for Sunlit Outdoor). Moving the camera vertically does not change the floor when restarting or recentering. Reset the Interactive Preview camera before beginning a new demo; other environments may need a different floor height in the Inspector. On device, World Query supplies the real floor.
 
 ## Code overview
 
@@ -125,13 +129,15 @@ World distances are in **centimeters**. Runtime rotations use **radians**. Scrip
 
 ## Testing
 
-The project registers three LEAF scenarios in [StepSweeperLeafIndex.ts](Assets/Scripts/Tests/StepSweeperLeafIndex.ts). Use the LEAF runner in Lens Studio with the project scene loaded:
+The project registers five LEAF scenarios in [StepSweeperLeafIndex.ts](Assets/Scripts/Tests/StepSweeperLeafIndex.ts). Use the LEAF runner in Lens Studio with the project scene loaded:
 
 | Scenario ID | Coverage |
 |---|---|
 | `specssweeper-start-reachability` | Start button reaches the gameplay HUD |
-| `specssweeper-core-flow` | Flag rules and tile interaction, simulated reveals, forced win, replay, and mine-hit effects |
+| `specssweeper-core-flow` | Flag rules, floor-scan cleanup, depth-tested floor marks, spatial clues, compact win/loss cards, replay and localized mine-hit effects |
 | `specssweeper-progression-placement` | Local record storage, difficulty board rebuilding, and Preview recentering |
+| `specssweeper-flag-motion` | Pinned seam and moving cloth tip, interrupted deployment/retraction, restart during a burst; leaves a planted flag for review |
+| `specssweeper-effects-render` | Production burst and result-state visual inspection. Default sequence removes its fixture. Optional `pose` values `mine`, `burst-032`, `burst-060`, `win`, and `loss` leave a state for capture until Preview resets. |
 
 Run UI scenarios from a fresh Preview session. The core-flow scenario assumes **Standard** difficulty and simulated movement; select Standard before running it. Progression and reachability scenarios expect the intro screen.
 

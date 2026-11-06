@@ -49,7 +49,7 @@ export class StepSweeperMain extends BaseScriptComponent {
   @ui.group_start("Preview")
   @input @hint("Enable button-driven movement in Lens Studio Preview only") useSimulatedPlayer: boolean = true
   @input @hint("Board center distance in front of the tracked camera, in centimeters") @widget(new SliderWidget(200, 450, 10)) boardForwardDistanceCm: number = 340
-  @input @hint("Estimated floor offset below the tracked camera, in centimeters") @widget(new SliderWidget(-200, -80, 5)) emulatorFloorY: number = -150
+  @input @hint("Fixed world Y of the Preview floor in centimeters; calibrated for Sunlit Outdoor at the default camera pose") @widget(new SliderWidget(-300, 0, 5)) emulatorFloorY: number = -170
   @input @hint("Print coordinate, mine, and state diagnostics") debugLogging: boolean = true
   @ui.group_end
 
@@ -74,6 +74,8 @@ export class StepSweeperMain extends BaseScriptComponent {
   private difficulty!: StepSweeperDifficulty
   private viewBuilt = false
   private allowProgressRecord = true
+  private lossResultEvent!: DelayedCallbackEvent
+  private lossGeneration = -1
 
   onAwake(): void {
     if (!this.boardRoot || !this.cameraObject || !this.cellView || !this.gameUI) {
@@ -89,6 +91,12 @@ export class StepSweeperMain extends BaseScriptComponent {
     }
     this.audio = new StepSweeperAudioController(this.getSceneObject(), this.startAccentTrack)
     this.simulationEnabled = global.deviceInfoSystem.isEditor() && this.useSimulatedPlayer
+    this.lossResultEvent = this.createEvent("DelayedCallbackEvent") as DelayedCallbackEvent
+    this.lossResultEvent.bind(() => {
+      if (this.state.phase !== StepSweeperPhase.Lost || this.state.generation !== this.lossGeneration) return
+      const best = this.progress.bestSeconds(this.difficulty.id)
+      this.gameUI.showEnd(false, this.formatTime(), this.state.steps, this.board.flagsUsed, this.difficulty.id, this.formatStoredTime(best), this.progress.wins(this.difficulty.id), 0, false, this.board.revealedSafeCells, this.board.totalSafeCells)
+    })
     this.createEvent("OnStartEvent").bind(() => this.onStart())
     this.createEvent("UpdateEvent").bind(() => this.onUpdate())
     console.log("[SpecsSweeper] READY — press Start Game")
@@ -96,12 +104,19 @@ export class StepSweeperMain extends BaseScriptComponent {
 
   private onStart(): void {
     this.gameUI.configureDebugControls(this.simulationEnabled)
+    this.gameUI.setViewer(this.cameraObject)
+    this.cellView.setClueCamera(this.cameraObject)
     this.cellView.build(this.board)
+    this.gameUI.setArenaDimensions(this.board.columns * this.board.cellSizeCm, this.board.rows * this.board.cellSizeCm)
     this.viewBuilt = true
     this.cellView.onCellTapped.add(cell => this.toggleFlagAt(cell))
     // Give Preview and the intro UI an immediate stable anchor; on device the
     // World Query pass below refines this to a detected floor surface.
-    this.floorPlacement.placeRelativeToCamera(this.cameraObject, this.boardForwardDistanceCm, this.emulatorFloorY)
+    if (global.deviceInfoSystem.isEditor()) {
+      this.floorPlacement.placeAtPreviewFloor(this.cameraObject, this.boardForwardDistanceCm, this.emulatorFloorY)
+    } else {
+      this.floorPlacement.placeRelativeToCamera(this.cameraObject, this.boardForwardDistanceCm, this.emulatorFloorY)
+    }
     this.gameUI.setSpatialAnchor(this.boardRoot)
     this.boardRoot.enabled = false
     this.bindUI()
@@ -134,6 +149,7 @@ export class StepSweeperMain extends BaseScriptComponent {
   }
 
   private startGame(): void {
+    this.lossResultEvent.enabled = false
     this.boardRoot.enabled = true
     this.board.reset()
     this.tracker.reset()
@@ -282,8 +298,9 @@ export class StepSweeperMain extends BaseScriptComponent {
     this.cellView.revealAllMines(this.board)
     this.cellView.playMineBurst(cell)
     this.audio.playMine(this.cellWorldPosition(cell, 5))
-    const best = this.progress.bestSeconds(this.difficulty.id)
-    this.gameUI.showEnd(false, this.formatTime(), this.state.steps, this.board.flagsUsed, this.difficulty.id, this.formatStoredTime(best), this.progress.wins(this.difficulty.id), 0, false)
+    this.lossGeneration = this.state.generation
+    this.lossResultEvent.enabled = true
+    this.lossResultEvent.reset(0.95)
     console.log(`[SpecsSweeper] LOSS mine=${cell.row},${cell.column}`)
   }
 
@@ -295,7 +312,7 @@ export class StepSweeperMain extends BaseScriptComponent {
     const result = this.allowProgressRecord
       ? this.progress.recordWin(this.difficulty, this.state.elapsed(), this.state.steps)
       : this.currentProgress()
-    this.gameUI.showEnd(true, this.formatTime(), this.state.steps, this.board.flagsUsed, this.difficulty.id, this.formatStoredTime(result.bestSeconds), result.wins, result.score, result.isNewBest)
+    this.gameUI.showEnd(true, this.formatTime(), this.state.steps, this.board.flagsUsed, this.difficulty.id, this.formatStoredTime(result.bestSeconds), result.wins, result.score, result.isNewBest, this.board.revealedSafeCells, this.board.totalSafeCells)
     this.syncDifficultyUI()
     console.log(`[SpecsSweeper] WIN time=${this.formatTime()} steps=${this.state.steps}`)
   }
@@ -366,7 +383,10 @@ export class StepSweeperMain extends BaseScriptComponent {
     this.tracker = new StepSweeperPlayerGridTracker(this.board, this.boardRoot)
     this.revealSystem = new StepSweeperRevealSystem(this.board)
     this.flagInteraction = new StepSweeperFlagInteraction(this.board, this.boardRoot)
-    if (rebuildView && this.viewBuilt) this.cellView.build(this.board)
+    if (rebuildView && this.viewBuilt) {
+      this.cellView.build(this.board)
+      this.gameUI.setArenaDimensions(this.board.columns * this.board.cellSizeCm, this.board.rows * this.board.cellSizeCm)
+    }
   }
 
   private cycleDifficulty(): void {

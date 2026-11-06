@@ -13,6 +13,8 @@ export class StepSweeperAudioController {
   private win: AudioComponent
   private music: AudioComponent
   private startAccent: AudioComponent | null = null
+  private musicMuted = false
+  private roundOver = false
   private revealObject: SceneObject
   private mineObject: SceneObject
 
@@ -21,7 +23,9 @@ export class StepSweeperAudioController {
     this.reveal = this.audio(this.revealObject, REVEAL, 0.32, Audio.PlaybackMode.LowLatency, true)
     this.flag = this.audio(this.audioObject(root, "FlagAudio"), FLAG, 0.42, Audio.PlaybackMode.LowLatency)
     this.mineObject = this.audioObject(root, "MineAudio")
-    this.mine = this.audio(this.mineObject, MINE, 0.48, Audio.PlaybackMode.LowLatency, true)
+    // A failure confirmation must remain audible when the player is looking
+    // away, standing above the source, or outside spatial attenuation range.
+    this.mine = this.audio(this.mineObject, MINE, 0.55, Audio.PlaybackMode.LowLatency)
     this.win = this.audio(this.audioObject(root, "WinAudio"), WIN, 0.45, Audio.PlaybackMode.LowLatency)
     this.music = this.audio(this.audioObject(root, "MusicAudio"), MUSIC, this.musicVolume, Audio.PlaybackMode.LowPower)
     if (startAccentTrack) {
@@ -37,13 +41,26 @@ export class StepSweeperAudioController {
   playFlag(): void { this.flag.play(1) }
   playMine(worldPosition?: vec3): void {
     if (worldPosition) this.mineObject.getTransform().setWorldPosition(worldPosition)
+    this.reveal.stop(false)
+    this.roundOver = true
+    this.updateMusicVolume()
     this.mine.play(1)
   }
   playWin(): void { this.win.play(1) }
-  playStart(): void { this.startAccent?.play(1) }
+  playStart(): void {
+    this.mine.stop(false)
+    this.roundOver = false
+    this.updateMusicVolume()
+    this.startAccent?.play(1)
+  }
 
   setMusicMuted(muted: boolean): void {
-    this.music.volume = muted ? 0 : this.musicVolume
+    this.musicMuted = muted
+    this.updateMusicVolume()
+  }
+
+  private updateMusicVolume(): void {
+    this.music.volume = this.musicMuted ? 0 : this.musicVolume * (this.roundOver ? 0.18 : 1)
   }
 
   private audio(parent: SceneObject, track: AudioTrackAsset, volume: number, mode: Audio.PlaybackMode, spatial = false): AudioComponent {

@@ -90,6 +90,6 @@
     - '// @ui {"widget":"group_start", "label":"Preview"}'
     - '// @input bool useSimulatedPlayer = true {"hint":"Enable button-driven movement in Lens Studio Preview only"}'
     - '// @input float boardForwardDistanceCm = 340 {"hint":"Board center distance in front of the tracked camera, in centimeters", "widget":"slider", "min":200, "max":450, "step":10}'
-    - '// @input float emulatorFloorY = -150 {"hint":"Estimated floor offset below the tracked camera, in centimeters", "widget":"slider", "min":-200, "max":-80, "step":5}'
+    - '// @input float emulatorFloorY = -170 {"hint":"Fixed world Y of the Preview floor in centimeters; calibrated for Sunlit Outdoor at the default camera pose", "widget":"slider", "min":-300, "max":0, "step":5}'
     - '// @input bool debugLogging = true {"hint":"Print coordinate, mine, and state diagnostics"}'
     - '// @ui {"widget":"group_end"}'

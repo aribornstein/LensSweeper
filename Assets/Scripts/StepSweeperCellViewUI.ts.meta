@@ -30,9 +30,13 @@
   ScriptInputsHidden:
     boundaryMaterial: false
     flagMaterial: false
+    floorMarkColor: false
+    floorWashOpacity: false
+    gridOpacity: false
     hologramMaterial: false
     mineMaterial: false
     playerHighlightMaterial: false
+    revealDuration: false
     revealedMaterial: false
     scanMaterial: false
     targetHighlightMaterial: false
@@ -57,6 +61,10 @@
       boundaryMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
       hologramMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
       scanMaterial: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      floorMarkColor: !<Vec4> {x: 0.280000, y: 0.820000, z: 0.940000, w: 0.420000}
+      floorWashOpacity: 0.035000
+      gridOpacity: 0.140000
+      revealDuration: 0.480000
   ScriptTypes:
     -
       {}
@@ -64,14 +72,20 @@
     - '// @ui {"widget":"label", "label":"<span style=\"color: #22D3EE;\">Specs Sweeper board presentation</span>"}'
     - '// @ui {"widget":"separator"}'
     - '// @ui {"widget":"group_start", "label":"References"}'
-    - '// @input Asset.RenderMesh tileMesh {"hint":"Shared unit box mesh used by every tile and marker"}'
-    - '// @input Asset.Material unrevealedMaterial {"hint":"Nearly transparent unrevealed tile material"}'
-    - '// @input Asset.Material revealedMaterial {"hint":"Cyan safe reveal material"}'
-    - '// @input Asset.Material mineMaterial {"hint":"Orange/red mine material"}'
-    - '// @input Asset.Material flagMaterial {"hint":"Orange holographic flag material"}'
-    - '// @input Asset.Material playerHighlightMaterial {"hint":"Cyan current-player cell highlight"}'
-    - '// @input Asset.Material targetHighlightMaterial {"hint":"Yellow target cell highlight"}'
-    - '// @input Asset.Material boundaryMaterial {"hint":"Cyan board boundary material"}'
-    - '// @input Asset.Material hologramMaterial {"hint":"Asset Library hologram material used by thin frame rails and beacons"}'
-    - '// @input Asset.Material scanMaterial {"hint":"Asset Library scan material used by the targeted cell"}'
+    - '// @input Asset.RenderMesh tileMesh {"hint":"Shared unit box mesh for floor washes and scan lines"}'
+    - '// @input Asset.Material unrevealedMaterial {"hint":"Unrevealed material reference"}'
+    - '// @input Asset.Material revealedMaterial {"hint":"Safe reveal material reference"}'
+    - '// @input Asset.Material mineMaterial {"hint":"Mine material reference"}'
+    - '// @input Asset.Material flagMaterial {"hint":"Flag material reference"}'
+    - '// @input Asset.Material playerHighlightMaterial {"hint":"Player highlight material reference"}'
+    - '// @input Asset.Material targetHighlightMaterial {"hint":"Target highlight material reference"}'
+    - '// @input Asset.Material boundaryMaterial {"hint":"Unlit template for floor markings, props and clues"}'
+    - '// @input Asset.Material hologramMaterial {"hint":"Legacy frame material reference"}'
+    - '// @input Asset.Material scanMaterial {"hint":"Legacy scan material reference"}'
+    - '// @ui {"widget":"group_end"}'
+    - '// @ui {"widget":"group_start", "label":"Floor appearance"}'
+    - '// @input vec4 floorMarkColor = {0.2,0.88,1,0.7} {"hint":"Covered cell corner-mark color", "widget":"color"}'
+    - '// @input float floorWashOpacity = 0.075 {"hint":"Subtle covered-cell blue wash opacity", "widget":"slider", "min":0, "max":0.15, "step":0.005}'
+    - '// @input float gridOpacity = 0.52 {"hint":"Floor grid line opacity", "widget":"slider", "min":0, "max":0.8, "step":0.01}'
+    - '// @input float revealDuration = 0.65 {"hint":"Floor scan and clue arrival duration, in seconds", "widget":"slider", "min":0.2, "max":0.8, "step":0.02}'
     - '// @ui {"widget":"group_end"}'

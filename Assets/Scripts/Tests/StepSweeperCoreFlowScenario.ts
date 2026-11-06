@@ -53,6 +53,50 @@ export class StepSweeperCoreFlowScenario extends Scenario {
     expect(position.text === startingPosition).toBe(false)
     expect(safe.text === "30").toBe(false)
     expect(clue.text).toBe("CLEAR TILE  •  0 ADJACENT MINES")
+    await sleep(900)
+    const firstCell = findSceneObjectByName("Cell_1_2")
+    const child = (parent: SceneObject, name: string): SceneObject => {
+      for (let i = 0; i < parent.getChildrenCount(); i++) if (parent.getChild(i).name === name) return parent.getChild(i)
+      throw new Error(`Missing child ${name}`)
+    }
+    expect(child(firstCell, "CoveredFloorWash").enabled).toBe(false)
+    expect(child(firstCell, "CellRevealScan").enabled).toBe(false)
+    const gridVisual = findSceneObjectByName("FieldGrid").getComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    expect(gridVisual.mainMaterial.mainPass.depthTest).toBe(true)
+    expect(gridVisual.mainMaterial.mainPass.depthWrite).toBe(false)
+    // The first flood reveal includes zero markers and actual extruded clues.
+    // Verify billboard orientation again after a viewer position change.
+    const camera = findSceneObjectByName("Camera Object")
+    const cameraTransform = camera.getTransform()
+    const originalCameraPosition = cameraTransform.getWorldPosition()
+    const spatialClues: SceneObject[] = []
+    const visit = (object: SceneObject): void => {
+      if (!object.enabled) return
+      if (object.name === "SpatialNumeral") spatialClues.push(object)
+      for (let i = 0; i < object.getChildrenCount(); i++) visit(object.getChild(i))
+    }
+    for (let i = 0; i < global.scene.getRootObjectsCount(); i++) visit(global.scene.getRootObject(i))
+    expect(spatialClues.length > 0).toBe(true)
+    const verifyClues = (): void => {
+      for (const object of spatialClues) {
+        const transform = object.getTransform()
+        const toViewer = cameraTransform.getWorldPosition().sub(transform.getWorldPosition()).normalize()
+        const facing = transform.getWorldRotation().multiplyVec3(vec3.forward())
+        expect(facing.dot(toViewer) > 0.99).toBe(true)
+        const digit = object.getChild(0).getComponent("Component.Text3D") as Text3D
+        expect(digit.extrusionDepth > 0).toBe(true)
+        expect(Number(digit.text) > 0 && Number(digit.text) <= 8).toBe(true)
+        expect(digit.mainMaterial.mainPass.depthTest).toBe(true)
+      }
+    }
+    verifyClues()
+    try {
+      cameraTransform.setWorldPosition(originalCameraPosition.add(new vec3(60, 0, 0)))
+      await sleep(150)
+      verifyClues()
+    } finally {
+      cameraTransform.setWorldPosition(originalCameraPosition)
+    }
     const safeBeforeNumberedStep = safe.text
     await interactor.press("DebugMoveEast")
     await interactor.press("DebugMoveEast")
@@ -68,29 +112,56 @@ export class StepSweeperCoreFlowScenario extends Scenario {
 
     await interactor.press("DebugForceWin")
     const end = findSceneObjectByName("SpecsSweeperEnd")
-    const endTitle = findSceneObjectByName("Text-ROOM CLEARED!").getComponent("Component.Text") as Text
+    const endTitle = findSceneObjectByName("Text-Room cleared").getComponent("Component.Text") as Text
     expect(end.enabled).toBe(true)
-    expect(endTitle.text).toBe("ROOM CLEARED!")
+    expect(endTitle.text).toBe("Room cleared")
+    expect(findSceneObjectByName("VictorySweep").enabled).toBe(true)
+    const toCard = end.getTransform().getWorldPosition().sub(cameraTransform.getWorldPosition())
+    expect(Math.abs(toCard.dot(cameraTransform.getWorldRotation().multiplyVec3(vec3.back())) - 170) < 0.1).toBe(true)
+    expect(Math.abs(toCard.dot(cameraTransform.getWorldRotation().multiplyVec3(vec3.up())) - 22) < 0.1).toBe(true)
+    expect(end.getTransform().getWorldRotation().multiplyVec3(vec3.forward()).dot(toCard.normalize().uniformScale(-1)) > 0.999).toBe(true)
 
     await interactor.press("PlayAgain")
     expect(end.enabled).toBe(false)
     expect(hud.enabled).toBe(true)
+    expect(findSceneObjectByName("VictorySweep").enabled).toBe(false)
 
-    // The mine-loss path should create a short-lived, visible burst in
-    // addition to the expanding shockwave.
+    // Mine feedback is board-local and depth-tested, with pooled fragments
+    // and a delayed result card so the burst remains visible.
     await interactor.press("HudToggleDebug")
-    await interactor.press("DebugForceLoss")
+    // Sample the flash before its 0.4s cutoff, allowing for trigger overhead.
+    await interactor.press("DebugForceLoss", 220)
     const explosionParticle = findSceneObjectByName("ExplosionParticle-0")
     expect(explosionParticle.enabled).toBe(true)
-    const particleVisual = explosionParticle.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
-    expect(particleVisual.renderOrder).toBe(300)
-    expect(particleVisual.mainMaterial.mainPass.depthTest).toBe(false)
+    const particleVisual = explosionParticle.getChild(0).getComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    expect(particleVisual.mainMaterial.mainPass.depthTest).toBe(true)
     expect(explosionParticle.getTransform().getLocalScale().x > 1).toBe(true)
+    expect(end.enabled).toBe(false)
+    expect(findSceneObjectByName("BurstHotCore").enabled).toBe(true)
+    await sleep(150)
+    const ring = findSceneObjectByName("MineShockwave")
+    expect(ring.enabled).toBe(true)
+    const initialRadius = ring.getTransform().getLocalScale().x
+    await sleep(200)
+    expect(ring.getTransform().getLocalScale().x > initialRadius).toBe(true)
+    await sleep(800)
     expect(end.enabled).toBe(true)
-    const explosionFlash = findSceneObjectByName("ExplosionFlash")
-    expect(explosionFlash.enabled).toBe(true)
-    expect(explosionFlash.getTransform().getLocalScale().x > 12).toBe(true)
-    await sleep(1800)
+    expect(endTitle.text).toBe("Mine hit")
+    const content = findSceneObjectByName("BoardContent")
+    for (let i = 0; i < content.getChildrenCount(); i++) {
+      const cellObject = content.getChild(i)
+      if (!cellObject.name.startsWith("Cell_")) continue
+      for (let j = 0; j < cellObject.getChildrenCount(); j++) {
+        const marker = cellObject.getChild(j)
+        if (marker.name === "MineLocation" && marker.enabled) expect(child(cellObject, "CoveredFloorWash").enabled).toBe(false)
+      }
+    }
     expect(explosionParticle.enabled).toBe(false)
+    expect(ring.enabled).toBe(false)
+    expect(findSceneObjectByName("MineHitMarker").enabled).toBe(true)
+    await interactor.press("PlayAgain")
+    expect(findSceneObjectByName("MineBurst").enabled).toBe(false)
+    await sleep(800)
+    expect(end.enabled).toBe(false)
   }
 }

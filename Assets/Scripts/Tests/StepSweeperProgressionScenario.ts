@@ -3,6 +3,7 @@ import {expect} from "Leaf.lspkg/Utils/common/Expect"
 import {findSceneObjectByName, sleep} from "Leaf.lspkg/Utils/common/Utils"
 import {StepSweeperLeafInteractor} from "./StepSweeperLeafInteractor"
 import {STEP_SWEEPER_DIFFICULTIES, StepSweeperProgress} from "../StepSweeperProgress"
+import {StepSweeperMain} from "../StepSweeperMain"
 
 @component
 export class StepSweeperProgressionScenario extends Scenario {
@@ -27,6 +28,8 @@ export class StepSweeperProgressionScenario extends Scenario {
     await interactor.press("HudRecenter")
     const placement = findSceneObjectByName("Text-PLACEMENT READY").getComponent("Component.Text") as Text
     expect(placement.text).toBe("PREVIEW PLACEMENT")
+    const main = findSceneObjectByName("SpecsSweeper").getComponent(StepSweeperMain.getTypeName()) as StepSweeperMain
+    expect(Math.abs(main.boardRoot.getTransform().getWorldPosition().y - main.emulatorFloorY) < 0.01).toBe(true)
   }
 
   private verifyPersistentProgress(): void {
@@ -55,9 +58,19 @@ export class StepSweeperProgressionScenario extends Scenario {
   private cellCount(): number {
     const root = findSceneObjectByName("BoardContent")
     let count = 0
+    let arenas = 0
     for (let i = 0; i < root.getChildrenCount(); i++) {
       if (root.getChild(i).name.indexOf("Cell_") === 0) count++
+      if (root.getChild(i).name === "ArenaArchitecture") {
+        arenas++
+        const arena = root.getChild(i)
+        expect(arena.getChildrenCount()).toBe(7)
+        for (let j = 0; j < arena.getChildrenCount(); j++) {
+          expect(arena.getChild(j).getComponent("Physics.ColliderComponent") === null).toBe(true)
+        }
+      }
     }
+    expect(arenas).toBe(1)
     return count
   }
 }
